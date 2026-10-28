@@ -28,6 +28,9 @@ import {
 	CheckCircle2,
 	AlertTriangle,
 	AlertCircle,
+	ArrowUpDown,
+	ArrowUp,
+	ArrowDown,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -76,6 +79,9 @@ export const AdminDashboard: React.FC = () => {
 	const [statusFilter, setStatusFilter] = useState<
 		"all" | "checked_in" | "pending"
 	>("all");
+	const [nameSortOrder, setNameSortOrder] = useState<"asc" | "desc" | null>(
+		null,
+	);
 
 	// Modals state
 	const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -201,9 +207,9 @@ export const AdminDashboard: React.FC = () => {
 	const checkInRate =
 		totalGuests > 0 ? Math.round((checkedInCount / totalGuests) * 100) : 0;
 
-	// Filtered guests
+	// Filtered and sorted guests
 	const filteredGuests = useMemo(() => {
-		return guests.filter((guest) => {
+		const filtered = guests.filter((guest) => {
 			const matchesSearch =
 				guest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				guest.phone.includes(searchQuery) ||
@@ -215,7 +221,22 @@ export const AdminDashboard: React.FC = () => {
 			if (statusFilter === "pending") return !guest.checked_in;
 			return true;
 		});
-	}, [guests, searchQuery, statusFilter]);
+
+		if (!nameSortOrder) return filtered;
+
+		return [...filtered].sort((a, b) => {
+			const comparison = capitalizeName(a.name).localeCompare(
+				capitalizeName(b.name),
+				undefined,
+				{ sensitivity: "base", numeric: true },
+			);
+			return nameSortOrder === "asc" ? comparison : -comparison;
+		});
+	}, [guests, searchQuery, statusFilter, nameSortOrder]);
+
+	const handleToggleNameSort = () => {
+		setNameSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+	};
 
 	// Handle Add / Edit Guest
 	const handleSaveGuest = async (e: React.FormEvent) => {
@@ -1007,7 +1028,34 @@ export const AdminDashboard: React.FC = () => {
 						<table className="w-full text-left text-xs">
 							<thead className="bg-shop-navy/80 border-b border-shop-cream/15 text-shop-cream/70 uppercase tracking-wider font-semibold">
 								<tr>
-									<th className="py-3 px-4">Guest Name</th>
+									<th className="py-3 px-4 w-12 text-center">#</th>
+									<th
+										onClick={handleToggleNameSort}
+										aria-sort={
+											nameSortOrder === "asc"
+												? "ascending"
+												: nameSortOrder === "desc"
+													? "descending"
+													: "none"
+										}
+										className="py-3 px-4 cursor-pointer select-none group hover:text-shop-cream transition-colors"
+										title={
+											nameSortOrder === "asc"
+												? "Sorted A–Z (Click to sort Z–A)"
+												: "Click to sort A–Z"
+										}
+									>
+										<div className="inline-flex items-center space-x-1.5">
+											<span>Guest Name</span>
+											{nameSortOrder === "asc" ? (
+												<ArrowUp className="w-3.5 h-3.5 text-shop-gold" />
+											) : nameSortOrder === "desc" ? (
+												<ArrowDown className="w-3.5 h-3.5 text-shop-gold" />
+											) : (
+												<ArrowUpDown className="w-3.5 h-3.5 text-shop-cream/40 group-hover:text-shop-cream/80 transition-colors" />
+											)}
+										</div>
+									</th>
 									<th className="py-3 px-4">Mobile</th>
 									<th className="py-3 px-4">Check-In Status</th>
 									<th className="py-3 px-4">Invitation Link</th>
@@ -1018,7 +1066,7 @@ export const AdminDashboard: React.FC = () => {
 								{loading ? (
 									<tr>
 										<td
-											colSpan={5}
+											colSpan={6}
 											className="py-12 text-center text-shop-cream/60"
 										>
 											<div className="w-8 h-8 border-2 border-shop-cream/20 border-t-shop-cream rounded-full animate-spin mx-auto mb-2" />
@@ -1028,7 +1076,7 @@ export const AdminDashboard: React.FC = () => {
 								) : filteredGuests.length === 0 ? (
 									<tr>
 										<td
-											colSpan={5}
+											colSpan={6}
 											className="py-12 text-center text-shop-cream/60"
 										>
 											No guests match your criteria. Click "Add Guest" or
@@ -1036,11 +1084,14 @@ export const AdminDashboard: React.FC = () => {
 										</td>
 									</tr>
 								) : (
-									filteredGuests.map((guest) => (
+									filteredGuests.map((guest, index) => (
 										<tr
 											key={guest.id}
 											className="hover:bg-shop-cream/5 transition duration-150"
 										>
+											<td className="py-3.5 px-4 text-center font-mono text-shop-cream/60 text-xs">
+												{index + 1}
+											</td>
 											<td className="py-3.5 px-4 font-bold text-shop-cream text-sm">
 												{capitalizeName(guest.name)}
 											</td>

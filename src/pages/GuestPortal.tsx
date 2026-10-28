@@ -216,11 +216,463 @@ export const GuestPortal: React.FC = () => {
 		}
 	};
 
-	const handleDownloadQR = () => {
-		const canvas = qrCanvasRef.current;
-		if (!canvas) return;
+	const handleDownloadQR = async () => {
+		const qrCanvas = qrCanvasRef.current;
+		if (!qrCanvas) return;
 
-		const pngUrl = canvas.toDataURL("image/png");
+		try {
+			if (document.fonts?.ready) {
+				await document.fonts.ready;
+			}
+		} catch {
+			// Continue with system fallback fonts if font loading check fails
+		}
+
+		const width = 1080;
+		const height = 1560;
+		const exportCanvas = document.createElement("canvas");
+		exportCanvas.width = width;
+		exportCanvas.height = height;
+		const ctx = exportCanvas.getContext("2d");
+		if (!ctx) return;
+
+		const drawRoundedRect = (
+			x: number,
+			y: number,
+			w: number,
+			h: number,
+			r: number,
+		) => {
+			ctx.beginPath();
+			ctx.moveTo(x + r, y);
+			ctx.lineTo(x + w - r, y);
+			ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+			ctx.lineTo(x + w, y + h - r);
+			ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+			ctx.lineTo(x + r, y + h);
+			ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+			ctx.lineTo(x, y + r);
+			ctx.quadraticCurveTo(x, y, x + r, y);
+			ctx.closePath();
+		};
+
+		// 1. Ambient Dark Navy Backdrop
+		const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+		bgGrad.addColorStop(0, "#081726");
+		bgGrad.addColorStop(0.5, "#0e243a");
+		bgGrad.addColorStop(1, "#0a1b2e");
+		ctx.fillStyle = bgGrad;
+		ctx.fillRect(0, 0, width, height);
+
+		// Subtle radial gold & blue ambient lighting
+		const topGlow = ctx.createRadialGradient(
+			width / 2,
+			140,
+			20,
+			width / 2,
+			140,
+			520,
+		);
+		topGlow.addColorStop(0, "rgba(201, 154, 69, 0.18)");
+		topGlow.addColorStop(1, "rgba(201, 154, 69, 0)");
+		ctx.fillStyle = topGlow;
+		ctx.fillRect(0, 0, width, height);
+
+		const bottomGlow = ctx.createRadialGradient(
+			width / 2,
+			height - 160,
+			40,
+			width / 2,
+			height - 160,
+			560,
+		);
+		bottomGlow.addColorStop(0, "rgba(27, 73, 101, 0.35)");
+		bottomGlow.addColorStop(1, "rgba(27, 73, 101, 0)");
+		ctx.fillStyle = bottomGlow;
+		ctx.fillRect(0, 0, width, height);
+
+		// Outer decorative frame border
+		drawRoundedRect(36, 36, width - 72, height - 72, 52);
+		ctx.strokeStyle = "rgba(244, 235, 218, 0.08)";
+		ctx.lineWidth = 2;
+		ctx.stroke();
+
+		// 2. Main Ticket Card Geometry
+		const cardX = 76;
+		const cardY = 76;
+		const cardW = width - cardX * 2; // 928
+		const cardH = height - cardY * 2; // 1408
+		const cardR = 44;
+		const headerH = 320;
+		const perfY = cardY + 1075;
+
+		// Card Drop Shadow
+		ctx.save();
+		drawRoundedRect(cardX, cardY, cardW, cardH, cardR);
+		ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+		ctx.shadowBlur = 50;
+		ctx.shadowOffsetY = 24;
+		ctx.fillStyle = "#f4ebda";
+		ctx.fill();
+		ctx.restore();
+
+		// Clip to Main Ticket Card
+		ctx.save();
+		drawRoundedRect(cardX, cardY, cardW, cardH, cardR);
+		ctx.clip();
+
+		// Card Cream Body Background
+		const bodyGrad = ctx.createLinearGradient(
+			0,
+			cardY + headerH,
+			0,
+			cardY + cardH,
+		);
+		bodyGrad.addColorStop(0, "#fbf8f1");
+		bodyGrad.addColorStop(1, "#f4ebda");
+		ctx.fillStyle = bodyGrad;
+		ctx.fillRect(cardX, cardY, cardW, cardH);
+
+		// 3. Card Header Banner
+		const headerGrad = ctx.createLinearGradient(
+			cardX,
+			cardY,
+			cardX + cardW,
+			cardY + headerH,
+		);
+		headerGrad.addColorStop(0, "#16395b");
+		headerGrad.addColorStop(0.55, "#12304d");
+		headerGrad.addColorStop(1, "#0e243a");
+		ctx.fillStyle = headerGrad;
+		ctx.fillRect(cardX, cardY, cardW, headerH);
+
+		// Header ambient gold glow
+		const headerGlow = ctx.createRadialGradient(
+			width / 2,
+			cardY + 40,
+			10,
+			width / 2,
+			cardY + 40,
+			380,
+		);
+		headerGlow.addColorStop(0, "rgba(201, 154, 69, 0.18)");
+		headerGlow.addColorStop(1, "rgba(201, 154, 69, 0)");
+		ctx.fillStyle = headerGlow;
+		ctx.fillRect(cardX, cardY, cardW, headerH);
+
+		// Header Top Row: Brand Monogram (Left) + VIP Verified Badge (Right)
+		const topBarY = cardY + 42;
+		const logoX = cardX + 48;
+		drawRoundedRect(logoX, topBarY, 56, 56, 14);
+		ctx.fillStyle = "#f4ebda";
+		ctx.fill();
+
+		ctx.fillStyle = "#0e243a";
+		ctx.font = '700 32px "Bebas Neue", "Oswald", sans-serif';
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText("B®", logoX + 28, topBarY + 30);
+
+		ctx.textAlign = "left";
+		ctx.textBaseline = "alphabetic";
+		ctx.fillStyle = "#f4ebda";
+		ctx.font = '700 26px "Bebas Neue", "Oswald", sans-serif';
+		ctx.fillText("BAZARNA®", logoX + 72, topBarY + 27);
+
+		ctx.fillStyle = "rgba(244, 235, 218, 0.65)";
+		ctx.font = '600 13px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("PRIVATE OPENING", logoX + 72, topBarY + 47);
+
+		// Right VIP Pill Badge
+		const badgeW = 220;
+		const badgeH = 42;
+		const badgeX = cardX + cardW - 48 - badgeW;
+		const badgeY = topBarY + 7;
+		drawRoundedRect(badgeX, badgeY, badgeW, badgeH, 21);
+		ctx.fillStyle = "rgba(201, 154, 69, 0.14)";
+		ctx.fill();
+		ctx.strokeStyle = "rgba(201, 154, 69, 0.5)";
+		ctx.lineWidth = 1.5;
+		ctx.stroke();
+
+		ctx.fillStyle = "#e5b869";
+		ctx.font = '700 13px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText("✦  OFFICIAL ENTRY PASS", badgeX + badgeW / 2, badgeY + 21);
+
+		// Center Header Main Title
+		ctx.textAlign = "center";
+		ctx.textBaseline = "alphabetic";
+		ctx.fillStyle = "#f4ebda";
+		ctx.font = '700 88px "Bebas Neue", "Oswald", sans-serif';
+		ctx.fillText("THE SHOP", width / 2, cardY + 225);
+
+		// Subtitle with decorative gold flanking lines
+		const subY = cardY + 266;
+		ctx.fillStyle = "#c99a45";
+		ctx.font = '700 16px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("G R A N D   O P E N I N G", width / 2, subY);
+
+		ctx.strokeStyle = "rgba(201, 154, 69, 0.45)";
+		ctx.lineWidth = 1.5;
+		ctx.beginPath();
+		ctx.moveTo(cardX + 160, subY - 6);
+		ctx.lineTo(width / 2 - 140, subY - 6);
+		ctx.moveTo(width / 2 + 140, subY - 6);
+		ctx.lineTo(cardX + cardW - 160, subY - 6);
+		ctx.stroke();
+
+		// Gold separator bar at bottom of header
+		const goldLineGrad = ctx.createLinearGradient(cardX, 0, cardX + cardW, 0);
+		goldLineGrad.addColorStop(0, "rgba(201, 154, 69, 0.2)");
+		goldLineGrad.addColorStop(0.5, "#c99a45");
+		goldLineGrad.addColorStop(1, "rgba(201, 154, 69, 0.2)");
+		ctx.fillStyle = goldLineGrad;
+		ctx.fillRect(cardX, cardY + headerH - 4, cardW, 4);
+
+		// 4. Guest Identity Section
+		const admitPillW = 200;
+		const admitPillH = 34;
+		const admitPillX = (width - admitPillW) / 2;
+		const admitPillY = cardY + headerH + 34;
+		drawRoundedRect(admitPillX, admitPillY, admitPillW, admitPillH, 17);
+		ctx.fillStyle = "rgba(22, 57, 91, 0.08)";
+		ctx.fill();
+
+		ctx.fillStyle = "#16395b";
+		ctx.font = '700 13px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText("INVITED GUEST", width / 2, admitPillY + admitPillH / 2);
+
+		// Guest First Name (auto-scaled to fit cleanly)
+		const guestFirstName = getFirstName(verifiedData?.guest_name || "Guest");
+		let nameFontSize = 68;
+		ctx.textBaseline = "alphabetic";
+		while (nameFontSize > 38) {
+			ctx.font = `700 ${nameFontSize}px "Bebas Neue", "Oswald", sans-serif`;
+			if (ctx.measureText(guestFirstName.toUpperCase()).width <= cardW - 110) {
+				break;
+			}
+			nameFontSize -= 4;
+		}
+		ctx.fillStyle = "#0e243a";
+		ctx.fillText(
+			guestFirstName.toUpperCase(),
+			width / 2,
+			cardY + headerH + 128,
+		);
+
+		// 5. QR Code Showcase Frame
+		const qrBoxSize = 460;
+		const qrBoxX = (width - qrBoxSize) / 2;
+		const qrBoxY = cardY + headerH + 158;
+
+		// White QR card with soft shadow
+		ctx.save();
+		drawRoundedRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 32);
+		ctx.shadowColor = "rgba(14, 36, 58, 0.12)";
+		ctx.shadowBlur = 28;
+		ctx.shadowOffsetY = 10;
+		ctx.fillStyle = "#ffffff";
+		ctx.fill();
+		ctx.restore();
+
+		drawRoundedRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 32);
+		ctx.strokeStyle = "rgba(22, 57, 91, 0.14)";
+		ctx.lineWidth = 2;
+		ctx.stroke();
+
+		// Gold scanner target corner brackets inside the QR card
+		const cornerInset = 22;
+		const cornerLen = 30;
+		const cLeft = qrBoxX + cornerInset;
+		const cRight = qrBoxX + qrBoxSize - cornerInset;
+		const cTop = qrBoxY + cornerInset;
+		const cBottom = qrBoxY + qrBoxSize - cornerInset;
+
+		ctx.strokeStyle = "#c99a45";
+		ctx.lineWidth = 4;
+		ctx.lineCap = "round";
+		ctx.beginPath();
+		// Top-left
+		ctx.moveTo(cLeft, cTop + cornerLen);
+		ctx.lineTo(cLeft, cTop);
+		ctx.lineTo(cLeft + cornerLen, cTop);
+		// Top-right
+		ctx.moveTo(cRight - cornerLen, cTop);
+		ctx.lineTo(cRight, cTop);
+		ctx.lineTo(cRight, cTop + cornerLen);
+		// Bottom-left
+		ctx.moveTo(cLeft, cBottom - cornerLen);
+		ctx.lineTo(cLeft, cBottom);
+		ctx.lineTo(cLeft + cornerLen, cBottom);
+		// Bottom-right
+		ctx.moveTo(cRight - cornerLen, cBottom);
+		ctx.lineTo(cRight, cBottom);
+		ctx.lineTo(cRight, cBottom - cornerLen);
+		ctx.stroke();
+
+		// Draw crisp QR Code image
+		const qrDrawSize = 376;
+		const qrDrawX = (width - qrDrawSize) / 2;
+		const qrDrawY = qrBoxY + (qrBoxSize - qrDrawSize) / 2;
+		ctx.save();
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(qrCanvas, qrDrawX, qrDrawY, qrDrawSize, qrDrawSize);
+		ctx.restore();
+
+		// 6. Status Badge & Pass Reference
+		const statusPillW = 460;
+		const statusPillH = 46;
+		const statusPillX = (width - statusPillW) / 2;
+		const statusPillY = qrBoxY + qrBoxSize + 28;
+
+		drawRoundedRect(statusPillX, statusPillY, statusPillW, statusPillH, 23);
+		if (verifiedData?.checked_in) {
+			ctx.fillStyle = "#d1fae5";
+			ctx.fill();
+			ctx.strokeStyle = "#6ee7b7";
+			ctx.lineWidth = 1.5;
+			ctx.stroke();
+			ctx.fillStyle = "#065f46";
+		} else {
+			ctx.fillStyle = "rgba(22, 57, 91, 0.07)";
+			ctx.fill();
+			ctx.strokeStyle = "rgba(22, 57, 91, 0.18)";
+			ctx.lineWidth = 1.5;
+			ctx.stroke();
+			ctx.fillStyle = "#16395b";
+		}
+
+		ctx.font = '700 15px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText(
+			verifiedData?.checked_in
+				? "✓  CHECKED-IN AT ENTRANCE"
+				: "●  VALID PASS — PRESENT AT ENTRANCE",
+			width / 2,
+			statusPillY + statusPillH / 2,
+		);
+
+		const passRef = (verifiedData?.qr_token || "VIPPASS")
+			.slice(0, 10)
+			.toUpperCase();
+		ctx.fillStyle = "rgba(22, 57, 91, 0.5)";
+		ctx.font = '600 13px "Plus Jakarta Sans", monospace';
+		ctx.textBaseline = "alphabetic";
+		ctx.fillText(
+			`PASS REF: #${passRef}`,
+			width / 2,
+			statusPillY + statusPillH + 28,
+		);
+
+		// 7. Perforated Ticket Divider Line
+		ctx.save();
+		ctx.setLineDash([12, 10]);
+		ctx.strokeStyle = "rgba(22, 57, 91, 0.22)";
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		ctx.moveTo(cardX + 40, perfY);
+		ctx.lineTo(cardX + cardW - 40, perfY);
+		ctx.stroke();
+		ctx.restore();
+
+		// 8. Event Schedule & Venue Details Box
+		const infoX = cardX + 48;
+		const infoY = perfY + 32;
+		const infoW = cardW - 96; // 832
+		const infoH = 200;
+
+		drawRoundedRect(infoX, infoY, infoW, infoH, 24);
+		ctx.fillStyle = "rgba(22, 57, 91, 0.055)";
+		ctx.fill();
+		ctx.strokeStyle = "rgba(22, 57, 91, 0.12)";
+		ctx.lineWidth = 1.5;
+		ctx.stroke();
+
+		// Internal dividers inside Event Details box
+		const midY = infoY + infoH / 2;
+		const midX = infoX + infoW / 2;
+		ctx.strokeStyle = "rgba(22, 57, 91, 0.1)";
+		ctx.lineWidth = 1.5;
+		ctx.beginPath();
+		ctx.moveTo(infoX + 24, midY);
+		ctx.lineTo(infoX + infoW - 24, midY);
+		ctx.moveTo(midX, infoY + 18);
+		ctx.lineTo(midX, midY - 18);
+		ctx.stroke();
+
+		// Top-Left Cell: Date
+		ctx.textAlign = "left";
+		ctx.fillStyle = "rgba(22, 57, 91, 0.55)";
+		ctx.font = '700 12px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("EVENT DATE", infoX + 32, infoY + 36);
+
+		ctx.fillStyle = "#0e243a";
+		ctx.font = '700 22px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("Sat, Dec 12, 2026", infoX + 32, infoY + 70);
+
+		// Top-Right Cell: Time
+		ctx.fillStyle = "rgba(22, 57, 91, 0.55)";
+		ctx.font = '700 12px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("DOORS OPEN", midX + 32, infoY + 36);
+
+		ctx.fillStyle = "#0e243a";
+		ctx.font = '700 22px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("6:00 PM (Cairo)", midX + 32, infoY + 70);
+
+		// Bottom Row: Location & Access Note
+		ctx.fillStyle = "rgba(22, 57, 91, 0.55)";
+		ctx.font = '700 12px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("LOCATION", infoX + 32, midY + 36);
+
+		ctx.fillStyle = "#0e243a";
+		ctx.font = '700 22px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("The Shop — Cairo, Egypt", infoX + 32, midY + 70);
+
+		ctx.textAlign = "right";
+		ctx.fillStyle = "#c99a45";
+		ctx.font = '700 14px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText("PRIVATE INVITATION", infoX + infoW - 32, midY + 68);
+
+		// Footer inside Card
+		ctx.textAlign = "center";
+		ctx.fillStyle = "rgba(22, 57, 91, 0.5)";
+		ctx.font = '600 14px "Plus Jakarta Sans", system-ui, sans-serif';
+		ctx.fillText(
+			"© 2026 THE SHOP & BAZARNA®  •  NON-TRANSFERABLE DIGITAL ENTRY PASS",
+			width / 2,
+			cardY + cardH - 36,
+		);
+
+		ctx.restore(); // End card clip
+
+		// Card outer border
+		drawRoundedRect(cardX, cardY, cardW, cardH, cardR);
+		ctx.strokeStyle = "rgba(244, 235, 218, 0.35)";
+		ctx.lineWidth = 2;
+		ctx.stroke();
+
+		// Ticket Side Cutout Notches at perforation line
+		const notchR = 24;
+		ctx.fillStyle = "#0c1f33";
+		ctx.strokeStyle = "rgba(244, 235, 218, 0.3)";
+		ctx.lineWidth = 2;
+
+		ctx.beginPath();
+		ctx.arc(cardX, perfY, notchR, -Math.PI / 2, Math.PI / 2);
+		ctx.fill();
+		ctx.stroke();
+
+		ctx.beginPath();
+		ctx.arc(cardX + cardW, perfY, notchR, Math.PI / 2, (Math.PI * 3) / 2);
+		ctx.fill();
+		ctx.stroke();
+
+		const pngUrl = exportCanvas.toDataURL("image/png");
 		const safeName = getFirstName(verifiedData?.guest_name || "guest")
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
@@ -228,35 +680,7 @@ export const GuestPortal: React.FC = () => {
 
 		const link = document.createElement("a");
 		link.href = pngUrl;
-		link.setAttribute("download", `the-shop-qr-${safeName || "pass"}.png`);
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-	};
-
-	const handleDownloadCalendar = () => {
-		const icsContent = [
-			"BEGIN:VCALENDAR",
-			"VERSION:2.0",
-			"PRODID:-//The Shop//Opening Check In//EN",
-			"CALSCALE:GREGORIAN",
-			"BEGIN:VEVENT",
-			"SUMMARY:The Shop — Private Store Opening",
-			"DESCRIPTION:Private store opening celebration for The Shop. Present your digital QR code at entrance.",
-			"LOCATION:The Shop, Cairo, Egypt",
-			"DTSTART:20261212T160000Z", // 6:00 PM Africa/Cairo (UTC+2) is 16:00:00Z
-			"DTEND:20261212T200000Z",
-			"STATUS:CONFIRMED",
-			"END:VEVENT",
-			"END:VCALENDAR",
-		].join("\r\n");
-
-		const blob = new Blob([icsContent], {
-			type: "text/calendar;charset=utf-8",
-		});
-		const link = document.createElement("a");
-		link.href = window.URL.createObjectURL(blob);
-		link.setAttribute("download", "the-shop-opening.ics");
+		link.setAttribute("download", `the-shop-pass-${safeName || "guest"}.png`);
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
@@ -395,7 +819,8 @@ export const GuestPortal: React.FC = () => {
 										</p>
 									) : (
 										<p className="text-[11px] text-shop-cream/50 mt-1">
-											Enter the Egyptian phone number your invitation was sent to.
+											Enter the Egyptian phone number your invitation was sent
+											to.
 										</p>
 									)}
 								</div>
@@ -440,14 +865,14 @@ export const GuestPortal: React.FC = () => {
 									The Shop
 								</h2>
 								<p className="text-xs uppercase tracking-widest text-shop-cream/70 font-medium">
-									Grand Opening Ceremony
+									Grand Opening
 								</p>
 							</div>
 
 							{/* Guest Details */}
 							<div className="p-6 text-center">
 								<p className="text-xs font-semibold uppercase tracking-wider text-shop-navy/60 mb-1">
-									Admit One
+									Invited Guest
 								</p>
 								<h3 className="font-display text-3xl sm:text-4xl tracking-wide font-black text-shop-navy mb-4">
 									{getFirstName(verifiedData.guest_name || "")}
@@ -503,33 +928,14 @@ export const GuestPortal: React.FC = () => {
 								</div>
 
 								{/* Actions */}
-								<div className="flex flex-col gap-2.5">
-									<button
-										type="button"
-										onClick={handleDownloadQR}
-										className="w-full bg-shop-navy hover:bg-shop-dark text-shop-cream text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center space-x-2 shadow-md"
-									>
-										<Download className="w-4 h-4" />
-										<span>Download QR Code Image</span>
-									</button>
-									<div className="flex flex-col sm:flex-row gap-2.5">
-										<button
-											type="button"
-											onClick={handleDownloadCalendar}
-											className="flex-1 bg-shop-cream-dark/60 hover:bg-shop-cream-dark text-shop-navy text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2 border border-shop-navy/20"
-										>
-											<Calendar className="w-4 h-4" />
-											<span>Add to Calendar</span>
-										</button>
-										<button
-											type="button"
-											onClick={() => window.print()}
-											className="flex-1 bg-shop-cream-dark/60 hover:bg-shop-cream-dark text-shop-navy text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2 border border-shop-navy/20"
-										>
-											<span>Save Pass / Print</span>
-										</button>
-									</div>
-								</div>
+								<button
+									type="button"
+									onClick={handleDownloadQR}
+									className="w-full bg-shop-navy hover:bg-shop-dark text-shop-cream text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center space-x-2 shadow-md"
+								>
+									<Download className="w-4 h-4" />
+									<span>Download QR Code Image</span>
+								</button>
 							</div>
 						</div>
 
