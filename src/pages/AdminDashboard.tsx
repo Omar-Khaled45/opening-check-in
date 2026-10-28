@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useMemo,
+	useRef,
+	useCallback,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import {
@@ -20,15 +26,45 @@ import {
 	LogOut,
 	X,
 	CheckCircle2,
+	AlertTriangle,
+	AlertCircle,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import {
 	normalizeEgyptianPhone,
+	isValidEgyptianPhone,
+	capitalizeName,
 	formatPhoneDisplay,
 	generateToken,
 } from "../lib/phone";
 import type { Guest } from "../types";
+
+interface ConfirmModalDetail {
+	label: string;
+	value: string | number;
+	colorClass?: string;
+}
+
+interface ConfirmModalState {
+	isOpen: boolean;
+	type: "confirm" | "danger";
+	title: string;
+	message: string;
+	details?: ConfirmModalDetail[];
+	guestPreviewList?: string[];
+	confirmText?: string;
+	loadingText?: string;
+	cancelText?: string;
+	onConfirm: () => Promise<void> | void;
+}
+
+interface ToastMessage {
+	id: string;
+	type: "success" | "error";
+	title: string;
+	message: string;
+}
 
 export const AdminDashboard: React.FC = () => {
 	const { signOut } = useAuth();
@@ -45,13 +81,77 @@ export const AdminDashboard: React.FC = () => {
 	const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 	const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
 	const [guestForm, setGuestForm] = useState({ name: "", phone: "" });
+	const [isSavingGuest, setIsSavingGuest] = useState(false);
+
 	const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 	const [importLoading, setImportLoading] = useState(false);
 	const [importSummary, setImportSummary] = useState<string | null>(null);
 
+	// Custom styled Confirmation modal state (only for pre-action confirmation prompts)
+	const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(
+		null,
+	);
+	const [confirmActionLoading, setConfirmActionLoading] = useState(false);
+
+	// System-styled Toaster notifications state
+	const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
 	// Copied invite feedback tracking
 	const [copiedToken, setCopiedToken] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	const dismissToast = useCallback((id: string) => {
+		setToasts((prev) => prev.filter((t) => t.id !== id));
+	}, []);
+
+	const showToast = useCallback(
+		(type: ToastMessage["type"], title: string, message: string) => {
+			const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+			setToasts((prev) => [...prev, { id, type, title, message }]);
+			setTimeout(() => {
+				dismissToast(id);
+			}, 4000);
+		},
+		[dismissToast],
+	);
+
+	const openConfirmModal = (
+		type: ConfirmModalState["type"],
+		title: string,
+		message: string,
+		options: Omit<ConfirmModalState, "isOpen" | "type" | "title" | "message">,
+	) => {
+		setConfirmModal({
+			isOpen: true,
+			type,
+			title,
+			message,
+			...options,
+		});
+	};
+
+	const closeConfirmModal = () => {
+		if (confirmActionLoading) return;
+		setConfirmModal(null);
+	};
+
+	const handleConfirmAction = async () => {
+		if (!confirmModal?.onConfirm || confirmActionLoading) return;
+		setConfirmActionLoading(true);
+		try {
+			await confirmModal.onConfirm();
+		} finally {
+			setConfirmActionLoading(false);
+		}
+	};
+
+	// Close Add/Edit modal and reset input fields
+	const handleCloseGuestModal = () => {
+		if (isSavingGuest) return;
+		setIsAddModalOpen(false);
+		setEditingGuest(null);
+		setGuestForm({ name: "", phone: "" });
+	};
 
 	// Load guests from database
 	const fetchGuests = async () => {
@@ -116,109 +216,308 @@ export const AdminDashboard: React.FC = () => {
 		});
 	}, [guests, searchQuery, statusFilter]);
 
-	// Handle Add Guest
+	// Handle Add / Edit Guest
 	const handleSaveGuest = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!guestForm.name.trim() || !guestForm.phone.trim()) return;
+		if (isSavingGuest) return;
 
-		const normalized = normalizeEgyptianPhone(guestForm.phone);
+		const formattedName = capitalizeName(guestForm.name);
+		const rawPhone = guestForm.phone.trim();
 
-		if (editingGuest) {
-			// Update
-			const { error } = await supabase
-				.from("guests")
-				.update({
-					name: guestForm.name.trim(),
-					phone: guestForm.phone.trim(),
-					phone_normalized: normalized,
-					updated_at: new Date().toISOString(),
-				})
-				.eq("id", editingGuest.id);
+		if (!formattedName || !rawPhone) return;
 
-			if (error) {
-				alert("Failed to update guest: " + error.message);
+		if (!isValidEgyptianPhone(rawPhone)) {
+			showToast(
+				"error",
+				"Invalid Egyptian Phone",
+				"Please enter a valid Egyptian mobile number starting with 010, 011, 012, or 015 (e.g. 01012345678 or +201xxxxxxxxx).",
+			);
+			return;
+		}
+
+		const normalized = normalizeEgyptianPhone(rawPhone);
+		setIsSavingGuest(true);
+
+		try {
+			if (editingGuest) {
+				// Update
+				const { error } = await supabase
+					.from("guests")
+					.update({
+						name: formattedName,
+						phone: rawPhone,
+						phone_normalized: normalized,
+						updated_at: new Date().toISOString(),
+					})
+					.eq("id", editingGuest.id);
+
+				if (error) {
+					showToast(
+						"error",
+						"Update Failed",
+						`Failed to update guest: ${error.message}`,
+					);
+				} else {
+					setIsAddModalOpen(false);
+					setEditingGuest(null);
+					setGuestForm({ name: "", phone: "" });
+					await fetchGuests();
+					showToast(
+						"success",
+						"Guest Updated",
+						`${formattedName}'s information has been updated successfully.`,
+					);
+				}
 			} else {
-				setEditingGuest(null);
-				setGuestForm({ name: "", phone: "" });
-				fetchGuests();
-			}
-		} else {
-			// Create new
-			const invite_token = generateToken(20);
-			const qr_token = generateToken(24);
+				// Create new
+				const invite_token = generateToken(20);
+				const qr_token = generateToken(24);
 
-			const { error } = await supabase.from("guests").insert([
-				{
-					name: guestForm.name.trim(),
-					phone: guestForm.phone.trim(),
-					phone_normalized: normalized,
-					invite_token,
-					qr_token,
-				},
-			]);
+				const { error } = await supabase.from("guests").insert([
+					{
+						name: formattedName,
+						phone: rawPhone,
+						phone_normalized: normalized,
+						invite_token,
+						qr_token,
+					},
+				]);
 
-			if (error) {
-				alert("Failed to add guest: " + error.message);
-			} else {
-				setIsAddModalOpen(false);
-				setGuestForm({ name: "", phone: "" });
-				fetchGuests();
+				if (error) {
+					showToast(
+						"error",
+						"Failed to Add Guest",
+						`Could not add guest: ${error.message}`,
+					);
+				} else {
+					setIsAddModalOpen(false);
+					setGuestForm({ name: "", phone: "" });
+					await fetchGuests();
+					showToast(
+						"success",
+						"Guest Added",
+						`${formattedName} has been added and their digital invitation is ready.`,
+					);
+				}
 			}
+		} finally {
+			setIsSavingGuest(false);
 		}
 	};
 
-	// Handle Delete
-	const handleDeleteGuest = async (id: string, name: string) => {
-		if (
-			!window.confirm(
-				`Are you sure you want to remove ${name} from the guest list?`,
-			)
-		)
-			return;
+	// Handle Delete Single Guest
+	const handleDeleteGuest = (id: string, name: string) => {
+		const displayName = capitalizeName(name);
+		openConfirmModal(
+			"danger",
+			"Delete Guest",
+			`Are you sure you want to remove ${displayName} from the guest list? This action cannot be undone.`,
+			{
+				confirmText: "Delete Guest",
+				loadingText: "Deleting...",
+				cancelText: "Cancel",
+				onConfirm: async () => {
+					const { error } = await supabase.from("guests").delete().eq("id", id);
+					setConfirmModal(null);
 
-		const { error } = await supabase.from("guests").delete().eq("id", id);
-		if (error) {
-			alert("Failed to delete guest: " + error.message);
-		} else {
-			fetchGuests();
+					if (error) {
+						showToast(
+							"error",
+							"Delete Failed",
+							`Failed to delete guest: ${error.message}`,
+						);
+					} else {
+						await fetchGuests();
+						showToast(
+							"success",
+							"Guest Removed",
+							`${displayName} has been removed from the guest list.`,
+						);
+					}
+				},
+			},
+		);
+	};
+
+	// Handle Delete All Guests
+	const handleDeleteAllGuests = () => {
+		if (guests.length === 0) {
+			showToast(
+				"error",
+				"No Guests Found",
+				"There are currently no guest records to delete.",
+			);
+			return;
 		}
+
+		const countToDelete = guests.length;
+		const checkedInToDelete = checkedInCount;
+		const pendingToDelete = remainingCount;
+		const previewNames = guests
+			.slice(0, 5)
+			.map((g) => `${capitalizeName(g.name)} (${formatPhoneDisplay(g.phone)})`);
+		if (guests.length > 5) {
+			previewNames.push(`...and ${guests.length - 5} more guest(s)`);
+		}
+
+		openConfirmModal(
+			"danger",
+			"Delete All Guests",
+			"Are you sure you want to permanently delete all guest records from the system? All invitations and QR codes will be invalidated. This action cannot be undone.",
+			{
+				details: [
+					{
+						label: "Total Guests to Delete",
+						value: countToDelete,
+						colorClass: "text-shop-cream font-bold",
+					},
+					{
+						label: "Checked-In Guests",
+						value: checkedInToDelete,
+						colorClass: "text-emerald-400 font-bold",
+					},
+					{
+						label: "Pending Guests",
+						value: pendingToDelete,
+						colorClass: "text-amber-400 font-bold",
+					},
+				],
+				guestPreviewList: previewNames,
+				confirmText: `Delete All (${countToDelete})`,
+				loadingText: "Deleting All...",
+				cancelText: "Cancel",
+				onConfirm: async () => {
+					// Clean up check_ins if permitted, then delete all guests
+					await supabase
+						.from("check_ins")
+						.delete()
+						.neq("id", "00000000-0000-0000-0000-000000000000");
+
+					const { error } = await supabase
+						.from("guests")
+						.delete()
+						.neq("id", "00000000-0000-0000-0000-000000000000");
+
+					setConfirmModal(null);
+
+					if (error) {
+						showToast(
+							"error",
+							"Delete All Failed",
+							`Failed to delete all guest records: ${error.message}`,
+						);
+					} else {
+						setGuests([]);
+						await fetchGuests();
+						showToast(
+							"success",
+							"All Guests Deleted",
+							`Successfully deleted all ${countToDelete} guest record(s) from the system.`,
+						);
+					}
+				},
+			},
+		);
 	};
 
 	// Handle Manual Check-in
-	const handleManualCheckIn = async (guest: Guest) => {
+	const handleManualCheckIn = (guest: Guest) => {
 		if (guest.checked_in) return;
-		if (!window.confirm(`Manually check in ${guest.name}?`)) return;
+		const displayName = capitalizeName(guest.name);
 
-		const { data, error } = await supabase.rpc("manual_check_in", {
-			p_guest_id: guest.id,
-		});
+		openConfirmModal(
+			"confirm",
+			"Manual Check-In",
+			`Are you sure you want to manually check in ${displayName}?`,
+			{
+				confirmText: "Check In Guest",
+				loadingText: "Checking In...",
+				cancelText: "Cancel",
+				onConfirm: async () => {
+					const { data, error } = await supabase.rpc("manual_check_in", {
+						p_guest_id: guest.id,
+					});
 
-		if (error || !data?.success) {
-			alert(error?.message || data?.error || "Manual check-in failed.");
-		} else {
-			fetchGuests();
-		}
+					setConfirmModal(null);
+
+					if (error || !data?.success) {
+						showToast(
+							"error",
+							"Check-In Failed",
+							error?.message || data?.error || "Manual check-in failed.",
+						);
+					} else {
+						await fetchGuests();
+						showToast(
+							"success",
+							"Guest Checked In",
+							`${displayName} has been manually checked in.`,
+						);
+					}
+				},
+			},
+		);
 	};
 
-	// Reissue QR code
-	const handleReissueQr = async (guest: Guest) => {
-		if (
-			!window.confirm(
-				`Generate a new QR code for ${guest.name}? Any previous QR code will immediately be invalidated.`,
-			)
-		)
-			return;
+	// Reissue QR code (and check out guest if already checked in so scanner can scan again)
+	const handleReissueQr = (guest: Guest) => {
+		const displayName = capitalizeName(guest.name);
+		const wasCheckedIn = guest.checked_in;
 
-		const { data, error } = await supabase.rpc("reissue_guest_qr", {
-			p_guest_id: guest.id,
-		});
+		openConfirmModal(
+			"confirm",
+			"Reissue QR Code",
+			wasCheckedIn
+				? `Generate a new QR code for ${displayName}? Any previous QR code will be invalidated, and ${displayName} will be checked out so the new QR code can be scanned again at the entrance.`
+				: `Generate a new QR code for ${displayName}? Any previous QR code will immediately be invalidated.`,
+			{
+				confirmText: "Reissue QR Code",
+				loadingText: "Reissuing...",
+				cancelText: "Cancel",
+				onConfirm: async () => {
+					// Clean up any existing check-in log for this guest
+					await supabase.from("check_ins").delete().eq("guest_id", guest.id);
 
-		if (error || !data?.success) {
-			alert(error?.message || data?.error || "Failed to reissue QR code.");
-		} else {
-			alert(`New QR code issued for ${guest.name}`);
-			fetchGuests();
-		}
+					// Also call RPC if available
+					await supabase.rpc("reissue_guest_qr", {
+						p_guest_id: guest.id,
+					});
+
+					// Generate new QR token and ensure guest is checked out so scanner can scan again
+					const { error: checkoutError } = await supabase
+						.from("guests")
+						.update({
+							qr_token: generateToken(24),
+							checked_in: false,
+							checked_in_at: null,
+							is_revoked: false,
+							updated_at: new Date().toISOString(),
+						})
+						.eq("id", guest.id);
+
+					setConfirmModal(null);
+
+					if (checkoutError) {
+						showToast(
+							"error",
+							"Reissue Failed",
+							checkoutError.message || "Failed to reissue QR code.",
+						);
+						await fetchGuests();
+						return;
+					}
+
+					await fetchGuests();
+					showToast(
+						"success",
+						"QR Code Reissued",
+						wasCheckedIn
+							? `New QR code issued for ${displayName}, and status reset to Pending so they can be scanned again.`
+							: `A new QR code has been issued for ${displayName}.`,
+					);
+				},
+			},
+		);
 	};
 
 	// Base URL for invitations (defaults to Vercel production domain)
@@ -241,7 +540,8 @@ export const AdminDashboard: React.FC = () => {
 	const handleWhatsApp = (guest: Guest) => {
 		const origin = getAppOrigin();
 		const inviteUrl = `${origin}/?token=${guest.invite_token}`;
-		const message = `Hello ${guest.name}! You are cordially invited to the private store opening of The Shop on Saturday, December 12, 2026 at 6:00 PM. Please access your digital entrance pass here: ${inviteUrl}`;
+		const displayName = capitalizeName(guest.name);
+		const message = `Hello ${displayName}! You are cordially invited to the private store opening of The Shop on Saturday, December 12, 2026 at 6:00 PM. Please access your digital entrance pass here: ${inviteUrl}`;
 		const encoded = encodeURIComponent(message);
 		const phoneNum =
 			guest.phone_normalized || normalizeEgyptianPhone(guest.phone);
@@ -251,7 +551,7 @@ export const AdminDashboard: React.FC = () => {
 	// Export report to CSV
 	const handleExportCSV = () => {
 		if (guests.length === 0) {
-			alert("No guests to export.");
+			showToast("error", "Export Unavailable", "No guests to export.");
 			return;
 		}
 
@@ -265,7 +565,7 @@ export const AdminDashboard: React.FC = () => {
 		];
 		const origin = getAppOrigin();
 		const rows = guests.map((g) => [
-			`"${g.name.replace(/"/g, '""')}"`,
+			`"${capitalizeName(g.name).replace(/"/g, '""')}"`,
 			`"${g.phone}"`,
 			`"${g.phone_normalized}"`,
 			g.checked_in ? "Yes" : "No",
@@ -309,7 +609,11 @@ export const AdminDashboard: React.FC = () => {
 				XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
 
 			if (jsonData.length === 0) {
-				alert("Uploaded file is empty.");
+				showToast(
+					"error",
+					"Empty File",
+					"The uploaded file does not contain any rows.",
+				);
 				setImportLoading(false);
 				return;
 			}
@@ -322,6 +626,7 @@ export const AdminDashboard: React.FC = () => {
 				invite_token: string;
 				qr_token: string;
 			}> = [];
+			let skippedInvalidPhoneCount = 0;
 
 			for (const row of jsonData) {
 				let name = "";
@@ -357,8 +662,12 @@ export const AdminDashboard: React.FC = () => {
 				}
 
 				if (name && phone) {
+					if (!isValidEgyptianPhone(phone)) {
+						skippedInvalidPhoneCount++;
+						continue;
+					}
 					newGuestsToInsert.push({
-						name,
+						name: capitalizeName(name),
 						phone,
 						phone_normalized: normalizeEgyptianPhone(phone),
 						invite_token: generateToken(20),
@@ -368,8 +677,12 @@ export const AdminDashboard: React.FC = () => {
 			}
 
 			if (newGuestsToInsert.length === 0) {
-				alert(
-					"Could not find valid guest rows with Name and Phone in the file.",
+				showToast(
+					"error",
+					"No Valid Guests Found",
+					skippedInvalidPhoneCount > 0
+						? `No valid rows could be imported. ${skippedInvalidPhoneCount} row(s) had invalid Egyptian phone numbers.`
+						: "Could not find valid guest rows with Name and Egyptian Phone in the file.",
 				);
 				setImportLoading(false);
 				return;
@@ -383,17 +696,31 @@ export const AdminDashboard: React.FC = () => {
 				const { error } = await supabase.from("guests").insert(chunk);
 				if (error) {
 					console.error("Batch insert error:", error);
-					alert(`Error during import: ${error.message}`);
+					showToast(
+						"error",
+						"Import Error",
+						`Error during import: ${error.message}`,
+					);
 					break;
 				}
 				insertedCount += chunk.length;
 			}
 
-			setImportSummary(`Successfully imported ${insertedCount} guests!`);
+			const skippedMsg =
+				skippedInvalidPhoneCount > 0
+					? ` (${skippedInvalidPhoneCount} skipped due to invalid Egyptian phone number)`
+					: "";
+			const summaryMsg = `Successfully imported ${insertedCount} guests!${skippedMsg}`;
+			setImportSummary(summaryMsg);
+			if (insertedCount > 0) {
+				showToast("success", "Guests Imported", summaryMsg);
+			}
 			fetchGuests();
 			if (fileInputRef.current) fileInputRef.current.value = "";
 		} catch (err: unknown) {
-			alert(
+			showToast(
+				"error",
+				"File Parse Error",
 				"Failed to parse file: " +
 					(err instanceof Error ? err.message : String(err)),
 			);
@@ -539,7 +866,7 @@ export const AdminDashboard: React.FC = () => {
 					</div>
 
 					{/* Action Buttons */}
-					<div className="flex items-center space-x-2">
+					<div className="flex flex-wrap items-center gap-2">
 						<button
 							onClick={() => {
 								setEditingGuest(null);
@@ -566,6 +893,16 @@ export const AdminDashboard: React.FC = () => {
 						>
 							<Download className="w-3.5 h-3.5" />
 							<span>Export CSV</span>
+						</button>
+
+						<button
+							onClick={handleDeleteAllGuests}
+							disabled={guests.length === 0}
+							className="bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+							title="Delete all guest records"
+						>
+							<Trash2 className="w-3.5 h-3.5" />
+							<span>Delete All</span>
 						</button>
 					</div>
 				</div>
@@ -611,7 +948,7 @@ export const AdminDashboard: React.FC = () => {
 											className="hover:bg-shop-cream/5 transition duration-150"
 										>
 											<td className="py-3.5 px-4 font-bold text-shop-cream text-sm">
-												{guest.name}
+												{capitalizeName(guest.name)}
 											</td>
 											<td className="py-3.5 px-4 font-mono text-shop-cream/80">
 												{formatPhoneDisplay(guest.phone)}
@@ -702,7 +1039,7 @@ export const AdminDashboard: React.FC = () => {
 														onClick={() => {
 															setEditingGuest(guest);
 															setGuestForm({
-																name: guest.name,
+																name: capitalizeName(guest.name),
 																phone: guest.phone,
 															});
 															setIsAddModalOpen(true);
@@ -735,14 +1072,19 @@ export const AdminDashboard: React.FC = () => {
 
 			{/* Add / Edit Guest Modal */}
 			{isAddModalOpen && (
-				<div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative">
+				<div
+					onClick={handleCloseGuestModal}
+					className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+				>
+					<div
+						onClick={(e) => e.stopPropagation()}
+						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
+					>
 						<button
-							onClick={() => {
-								setIsAddModalOpen(false);
-								setEditingGuest(null);
-							}}
-							className="absolute top-4 right-4 text-shop-cream/60 hover:text-shop-cream"
+							type="button"
+							onClick={handleCloseGuestModal}
+							disabled={isSavingGuest}
+							className="absolute top-4 right-4 text-shop-cream/60 hover:text-shop-cream disabled:opacity-40 disabled:cursor-not-allowed"
 						>
 							<X className="w-5 h-5" />
 						</button>
@@ -765,8 +1107,12 @@ export const AdminDashboard: React.FC = () => {
 									placeholder="e.g. Youssef Mansour"
 									required
 									autoFocus
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none focus:border-shop-gold"
+									disabled={isSavingGuest}
+									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none focus:border-shop-gold disabled:opacity-50"
 								/>
+								<p className="text-[11px] text-shop-cream/50 mt-1">
+									Initials will be automatically capitalized.
+								</p>
 							</div>
 
 							<div>
@@ -781,29 +1127,41 @@ export const AdminDashboard: React.FC = () => {
 									}
 									placeholder="010xxxxxxxx or +201xxxxxxxx"
 									required
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none focus:border-shop-gold"
+									disabled={isSavingGuest}
+									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none focus:border-shop-gold disabled:opacity-50"
 								/>
 								<p className="text-[11px] text-shop-cream/50 mt-1">
-									Supports formats: 010..., 011..., 012..., 015..., +201...
+									Valid Egyptian formats: 010..., 011..., 012..., 015...,
+									+201...
 								</p>
 							</div>
 
 							<div className="flex justify-end space-x-2 pt-2">
 								<button
 									type="button"
-									onClick={() => {
-										setIsAddModalOpen(false);
-										setEditingGuest(null);
-									}}
-									className="px-4 py-2 rounded-xl text-xs font-semibold text-shop-cream/70 hover:text-shop-cream"
+									onClick={handleCloseGuestModal}
+									disabled={isSavingGuest}
+									className="px-4 py-2 rounded-xl text-xs font-semibold text-shop-cream/70 hover:text-shop-cream disabled:opacity-40 disabled:cursor-not-allowed"
 								>
 									Cancel
 								</button>
 								<button
 									type="submit"
-									className="bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold text-xs py-2.5 px-5 rounded-xl transition shadow"
+									disabled={isSavingGuest}
+									className="bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold text-xs py-2.5 px-5 rounded-xl transition shadow flex items-center space-x-1.5 disabled:opacity-50 disabled:bg-shop-cream/40 disabled:text-shop-navy/60 disabled:cursor-not-allowed disabled:shadow-none"
 								>
-									{editingGuest ? "Update Guest" : "Generate Invitation"}
+									{isSavingGuest && (
+										<div className="w-3.5 h-3.5 border-2 border-shop-navy/30 border-t-shop-navy rounded-full animate-spin" />
+									)}
+									<span>
+										{editingGuest
+											? isSavingGuest
+												? "Updating..."
+												: "Update Guest"
+											: isSavingGuest
+												? "Adding..."
+												: "Generate Invitation"}
+									</span>
 								</button>
 							</div>
 						</form>
@@ -813,10 +1171,21 @@ export const AdminDashboard: React.FC = () => {
 
 			{/* Import Guests Modal */}
 			{isImportModalOpen && (
-				<div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative">
+				<div
+					onClick={() => {
+						if (importLoading) return;
+						setIsImportModalOpen(false);
+						setImportSummary(null);
+					}}
+					className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+				>
+					<div
+						onClick={(e) => e.stopPropagation()}
+						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative"
+					>
 						<button
 							onClick={() => {
+								if (importLoading) return;
 								setIsImportModalOpen(false);
 								setImportSummary(null);
 							}}
@@ -830,7 +1199,7 @@ export const AdminDashboard: React.FC = () => {
 						</h3>
 						<p className="text-xs text-shop-cream/70 mb-4">
 							Upload a CSV or Excel (.xlsx) file containing guest names and
-							mobile numbers.
+							Egyptian mobile numbers.
 						</p>
 
 						<div className="border-2 border-dashed border-shop-cream/25 rounded-2xl p-6 text-center bg-shop-navy/30">
@@ -868,6 +1237,7 @@ export const AdminDashboard: React.FC = () => {
 						<div className="mt-5 flex justify-end">
 							<button
 								onClick={() => {
+									if (importLoading) return;
 									setIsImportModalOpen(false);
 									setImportSummary(null);
 								}}
@@ -879,6 +1249,179 @@ export const AdminDashboard: React.FC = () => {
 					</div>
 				</div>
 			)}
+
+			{/* System-Styled Confirmation Modal (only for pre-action confirmations) */}
+			{confirmModal?.isOpen && (
+				<div
+					onClick={closeConfirmModal}
+					className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+				>
+					<div
+						onClick={(e) => e.stopPropagation()}
+						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
+					>
+						<button
+							type="button"
+							onClick={closeConfirmModal}
+							disabled={confirmActionLoading}
+							className="absolute top-4 right-4 text-shop-cream/60 hover:text-shop-cream disabled:opacity-40 disabled:cursor-not-allowed"
+						>
+							<X className="w-5 h-5" />
+						</button>
+
+						<div className="flex items-start space-x-3.5">
+							{/* Status Icon Badge */}
+							<div
+								className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${
+									confirmModal.type === "danger"
+										? "bg-red-500/15 border-red-500/30 text-red-400"
+										: "bg-amber-500/15 border-amber-500/30 text-shop-gold"
+								}`}
+							>
+								{confirmModal.type === "danger" ? (
+									<Trash2 className="w-5 h-5 text-red-400" />
+								) : (
+									<AlertTriangle className="w-5 h-5 text-shop-gold" />
+								)}
+							</div>
+
+							<div className="flex-1 pr-4">
+								<h3 className="font-display text-2xl font-bold uppercase tracking-wide text-shop-cream leading-tight">
+									{confirmModal.title}
+								</h3>
+								<p className="text-xs sm:text-sm text-shop-cream/80 mt-1.5 leading-relaxed">
+									{confirmModal.message}
+								</p>
+							</div>
+						</div>
+
+						{/* Optional Breakdown Details (e.g. Delete All Guests Summary) */}
+						{confirmModal.details && confirmModal.details.length > 0 && (
+							<div className="mt-4 bg-shop-navy/60 border border-shop-cream/15 rounded-xl p-3.5 space-y-2 text-xs">
+								{confirmModal.details.map((item, idx) => (
+									<div
+										key={idx}
+										className="flex items-center justify-between border-b border-shop-cream/10 last:border-b-0 pb-1.5 last:pb-0"
+									>
+										<span className="text-shop-cream/70">{item.label}</span>
+										<span
+											className={
+												item.colorClass || "text-shop-cream font-semibold"
+											}
+										>
+											{item.value}
+										</span>
+									</div>
+								))}
+							</div>
+						)}
+
+						{/* Optional Preview of Guests Affected */}
+						{confirmModal.guestPreviewList &&
+							confirmModal.guestPreviewList.length > 0 && (
+								<div className="mt-3 bg-shop-navy/40 border border-shop-cream/10 rounded-xl p-3">
+									<span className="block text-[10px] uppercase tracking-wider text-shop-cream/50 font-semibold mb-1.5">
+										Records to be deleted
+									</span>
+									<ul className="text-xs text-shop-cream/80 space-y-1 max-h-28 overflow-y-auto font-mono">
+										{confirmModal.guestPreviewList.map((line, i) => (
+											<li key={i} className="truncate">
+												• {line}
+											</li>
+										))}
+									</ul>
+								</div>
+							)}
+
+						{/* Modal Footer Actions */}
+						<div className="mt-6 flex items-center justify-end space-x-2.5">
+							<button
+								type="button"
+								onClick={closeConfirmModal}
+								disabled={confirmActionLoading}
+								className="px-4 py-2.5 rounded-xl text-xs font-semibold text-shop-cream/70 hover:text-shop-cream border border-shop-cream/15 hover:bg-shop-cream/5 transition disabled:opacity-40 disabled:cursor-not-allowed"
+							>
+								{confirmModal.cancelText || "Cancel"}
+							</button>
+							<button
+								type="button"
+								onClick={handleConfirmAction}
+								disabled={confirmActionLoading}
+								className={`font-bold text-xs py-2.5 px-5 rounded-xl transition shadow flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
+									confirmModal.type === "danger"
+										? "bg-red-500 hover:bg-red-600 text-white"
+										: "bg-shop-cream hover:bg-shop-cream-light text-shop-navy"
+								}`}
+							>
+								{confirmActionLoading ? (
+									<>
+										<div
+											className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${
+												confirmModal.type === "danger"
+													? "border-white/30 border-t-white"
+													: "border-shop-navy/30 border-t-shop-navy"
+											}`}
+										/>
+										<span>{confirmModal.loadingText || "Processing..."}</span>
+									</>
+								) : (
+									<span>{confirmModal.confirmText || "Confirm"}</span>
+								)}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* System-Styled Toaster Notifications (Success & Error UI) */}
+			<div className="fixed bottom-5 right-5 z-[70] flex flex-col gap-3 max-w-sm w-full px-4 sm:px-0 pointer-events-none">
+				{toasts.map((toast) => (
+					<div
+						key={toast.id}
+						className={`pointer-events-auto glass-panel bg-shop-dark/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border flex items-start space-x-3 animate-toastIn ${
+							toast.type === "success"
+								? "border-emerald-500/40 shadow-emerald-950/40"
+								: "border-red-500/40 shadow-red-950/40"
+						}`}
+					>
+						<div
+							className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+								toast.type === "success"
+									? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+									: "bg-red-500/15 border-red-500/30 text-red-400"
+							}`}
+						>
+							{toast.type === "success" ? (
+								<CheckCircle2 className="w-5 h-5 text-emerald-400" />
+							) : (
+								<AlertCircle className="w-5 h-5 text-red-400" />
+							)}
+						</div>
+
+						<div className="flex-1 min-w-0 pr-2">
+							<h4
+								className={`font-display text-lg uppercase tracking-wider font-bold leading-tight ${
+									toast.type === "success" ? "text-emerald-300" : "text-red-300"
+								}`}
+							>
+								{toast.title}
+							</h4>
+							<p className="text-xs text-shop-cream/85 mt-0.5 leading-relaxed">
+								{toast.message}
+							</p>
+						</div>
+
+						<button
+							type="button"
+							onClick={() => dismissToast(toast.id)}
+							className="text-shop-cream/50 hover:text-shop-cream transition p-0.5 shrink-0"
+							title="Dismiss notification"
+						>
+							<X className="w-4 h-4" />
+						</button>
+					</div>
+				))}
+			</div>
 		</div>
 	);
 };

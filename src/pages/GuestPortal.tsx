@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useParams } from "react-router-dom";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import confetti from "canvas-confetti";
 import {
 	Calendar,
@@ -11,8 +11,10 @@ import {
 	Sparkles,
 	CheckCircle2,
 	AlertCircle,
+	Download,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { capitalizeName } from "../lib/phone";
 import type { VerifyGuestResponse } from "../types";
 
 export const GuestPortal: React.FC = () => {
@@ -30,6 +32,7 @@ export const GuestPortal: React.FC = () => {
 	const [verifiedData, setVerifiedData] = useState<VerifyGuestResponse | null>(
 		null,
 	);
+	const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
 	useEffect(() => {
 		if (inviteTokenFromUrl) {
@@ -101,6 +104,25 @@ export const GuestPortal: React.FC = () => {
 		} finally {
 			setLoading(false);
 		}
+	};
+
+	const handleDownloadQR = () => {
+		const canvas = qrCanvasRef.current;
+		if (!canvas) return;
+
+		const pngUrl = canvas.toDataURL("image/png");
+		const safeName = (verifiedData?.guest_name || "guest")
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "");
+
+		const link = document.createElement("a");
+		link.href = pngUrl;
+		link.setAttribute("download", `the-shop-qr-${safeName || "pass"}.png`);
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
 	};
 
 	const handleDownloadCalendar = () => {
@@ -288,18 +310,22 @@ export const GuestPortal: React.FC = () => {
 								<p className="text-xs font-semibold uppercase tracking-wider text-shop-navy/60 mb-1">
 									Admit One
 								</p>
-								<h3 className="font-display text-3xl sm:text-4xl uppercase tracking-wide font-black text-shop-navy mb-4">
-									{verifiedData.guest_name}
+								<h3 className="font-display text-3xl sm:text-4xl tracking-wide font-black text-shop-navy mb-4">
+									{capitalizeName(verifiedData.guest_name || "")}
 								</h3>
 
 								{/* QR Code Container */}
 								<div className="inline-block p-4 bg-white rounded-2xl shadow-inner border border-shop-navy/10 mb-4">
 									{verifiedData.qr_token && (
-										<QRCodeSVG
+										<QRCodeCanvas
+											ref={qrCanvasRef}
 											value={verifiedData.qr_token}
-											size={200}
+											size={400}
+											style={{ width: 200, height: 200 }}
 											level="H"
 											includeMargin={true}
+											bgColor="#ffffff"
+											fgColor="#000000"
 										/>
 									)}
 								</div>
@@ -338,20 +364,32 @@ export const GuestPortal: React.FC = () => {
 								</div>
 
 								{/* Actions */}
-								<div className="flex flex-col sm:flex-row gap-2.5">
+								<div className="flex flex-col gap-2.5">
 									<button
-										onClick={handleDownloadCalendar}
-										className="flex-1 bg-shop-navy hover:bg-shop-dark text-shop-cream text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2"
+										type="button"
+										onClick={handleDownloadQR}
+										className="w-full bg-shop-navy hover:bg-shop-dark text-shop-cream text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center space-x-2 shadow-md"
 									>
-										<Calendar className="w-4 h-4" />
-										<span>Add to Calendar</span>
+										<Download className="w-4 h-4" />
+										<span>Download QR Code Image</span>
 									</button>
-									<button
-										onClick={() => window.print()}
-										className="flex-1 bg-shop-cream-dark/60 hover:bg-shop-cream-dark text-shop-navy text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2 border border-shop-navy/20"
-									>
-										<span>Save Pass / Print</span>
-									</button>
+									<div className="flex flex-col sm:flex-row gap-2.5">
+										<button
+											type="button"
+											onClick={handleDownloadCalendar}
+											className="flex-1 bg-shop-cream-dark/60 hover:bg-shop-cream-dark text-shop-navy text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2 border border-shop-navy/20"
+										>
+											<Calendar className="w-4 h-4" />
+											<span>Add to Calendar</span>
+										</button>
+										<button
+											type="button"
+											onClick={() => window.print()}
+											className="flex-1 bg-shop-cream-dark/60 hover:bg-shop-cream-dark text-shop-navy text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center space-x-2 border border-shop-navy/20"
+										>
+											<span>Save Pass / Print</span>
+										</button>
+									</div>
 								</div>
 							</div>
 						</div>

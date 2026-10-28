@@ -22,12 +22,51 @@ export function normalizeEgyptianPhone(input: string): string {
 		return cleaned;
 	}
 
+	// 14 digits starting with 00201
+	if (/^00201[0125]\d{8}$/.test(cleaned)) {
+		return cleaned.slice(2);
+	}
+
 	// 10 digits starting with 1 (e.g. 1012345678)
 	if (/^1[0125]\d{8}$/.test(cleaned)) {
 		return "20" + cleaned;
 	}
 
 	return cleaned;
+}
+
+/**
+ * Validates whether the given phone string is a valid Egyptian mobile number.
+ * Valid prefixes: 010, 011, 012, 015 (with or without +20 / 0020 / 20 country code).
+ */
+export function isValidEgyptianPhone(input: string): boolean {
+	if (!input) return false;
+	const normalized = normalizeEgyptianPhone(input.trim());
+	return /^201[0125]\d{8}$/.test(normalized);
+}
+
+/**
+ * Capitalizes the initials of each word in a guest's full name.
+ * Example: "youssef mansour" -> "Youssef Mansour"
+ */
+export function capitalizeName(name: string): string {
+	if (!name) return "";
+	return name
+		.trim()
+		.replace(/\s+/g, " ")
+		.split(" ")
+		.filter(Boolean)
+		.map((word) =>
+			word
+				.split("-")
+				.map((part) =>
+					part
+						? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+						: "",
+				)
+				.join("-"),
+		)
+		.join(" ");
 }
 
 /**
