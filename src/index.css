@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+	color-scheme: dark light;
+}
+
+body {
+	margin: 0;
+	font-family:
+		"Plus Jakarta Sans",
+		system-ui,
+		-apple-system,
+		sans-serif;
+	background-color: #0e243a;
+	color: #f4ebda;
+	overflow-x: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: #0e243a;
+}
+::-webkit-scrollbar-thumb {
+	background: #1b4965;
+	border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: #2d5a3f;
+}
+
+/* Glassmorphism styling */
+.glass-panel {
+	background: rgba(22, 57, 91, 0.7);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid rgba(244, 235, 218, 0.15);
+}
+
+.glass-panel-cream {
+	background: rgba(244, 235, 218, 0.95);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid rgba(22, 57, 91, 0.15);
+	color: #16395b;
+}
+
+/* Pulse animation for scanner targeting */
+@keyframes scanline {
+	0% {
+		transform: translateY(-100%);
+	}
+	50% {
+		transform: translateY(100%);
+	}
+	100% {
+		transform: translateY(-100%);
+	}
+}
+
+.animate-scanline {
+	animation: scanline 2.5s ease-in-out infinite;
+}
