@@ -950,10 +950,10 @@ export const AdminDashboard: React.FC = () => {
 				</div>
 
 				{/* Action Bar */}
-				<div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+				<div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
 					{/* Search & Filter */}
-					<div className="flex flex-1 items-center space-x-2">
-						<div className="relative flex-1 max-w-md">
+					<div className="flex flex-1 items-center space-x-2 min-w-0">
+						<div className="relative flex-1 min-w-0 lg:max-w-md">
 							<Search className="w-4 h-4 text-shop-cream/40 absolute left-3 top-1/2 -translate-y-1/2" />
 							<input
 								type="text"
@@ -971,7 +971,7 @@ export const AdminDashboard: React.FC = () => {
 									e.target.value as "all" | "checked_in" | "pending",
 								)
 							}
-							className="bg-shop-navy/60 border border-shop-cream/20 rounded-xl px-3 py-2 text-xs text-shop-cream focus:outline-none focus:border-shop-gold font-medium"
+							className="shrink-0 bg-shop-navy/60 border border-shop-cream/20 rounded-xl px-3 py-2 text-xs text-shop-cream focus:outline-none focus:border-shop-gold font-medium"
 						>
 							<option value="all">All Guests ({totalGuests})</option>
 							<option value="checked_in">Checked In ({checkedInCount})</option>
@@ -980,7 +980,7 @@ export const AdminDashboard: React.FC = () => {
 					</div>
 
 					{/* Action Buttons */}
-					<div className="flex flex-wrap items-center gap-2">
+					<div className="flex flex-wrap items-center gap-2 shrink-0">
 						<button
 							onClick={() => {
 								setEditingGuest(null);
@@ -988,35 +988,35 @@ export const AdminDashboard: React.FC = () => {
 								setGuestFormErrors({});
 								setIsAddModalOpen(true);
 							}}
-							className="bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold text-xs py-2 px-3.5 rounded-xl transition flex items-center space-x-1.5 shadow"
+							className="bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold text-xs py-2 px-3.5 rounded-xl transition flex items-center space-x-1.5 shadow whitespace-nowrap"
 						>
-							<Plus className="w-4 h-4" />
+							<Plus className="w-4 h-4 shrink-0" />
 							<span>Add Guest</span>
 						</button>
 
 						<button
 							onClick={() => setIsImportModalOpen(true)}
-							className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5"
+							className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5 whitespace-nowrap"
 						>
-							<Upload className="w-3.5 h-3.5" />
+							<Upload className="w-3.5 h-3.5 shrink-0" />
 							<span>Import List</span>
 						</button>
 
 						<button
 							onClick={handleExportCSV}
-							className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5"
+							className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5 whitespace-nowrap"
 						>
-							<Download className="w-3.5 h-3.5" />
+							<Download className="w-3.5 h-3.5 shrink-0" />
 							<span>Export CSV</span>
 						</button>
 
 						<button
 							onClick={handleDeleteAllGuests}
 							disabled={guests.length === 0}
-							className="bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+							className="bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-semibold py-2 px-3 rounded-xl transition flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
 							title="Delete all guest records"
 						>
-							<Trash2 className="w-3.5 h-3.5" />
+							<Trash2 className="w-3.5 h-3.5 shrink-0" />
 							<span>Delete All</span>
 						</button>
 					</div>
@@ -1025,10 +1025,12 @@ export const AdminDashboard: React.FC = () => {
 				{/* Guest Table */}
 				<div className="glass-panel rounded-2xl overflow-hidden border border-shop-cream/15 shadow-xl">
 					<div className="overflow-x-auto">
-						<table className="w-full text-left text-xs">
+						<table className="w-full min-w-[880px] text-left text-xs">
 							<thead className="bg-shop-navy/80 border-b border-shop-cream/15 text-shop-cream/70 uppercase tracking-wider font-semibold">
 								<tr>
-									<th className="py-3 px-4 w-12 text-center">#</th>
+									<th className="py-3.5 px-4 w-14 min-w-[3.5rem] text-center whitespace-nowrap">
+										#
+									</th>
 									<th
 										onClick={handleToggleNameSort}
 										aria-sort={
@@ -1038,28 +1040,36 @@ export const AdminDashboard: React.FC = () => {
 													? "descending"
 													: "none"
 										}
-										className="py-3 px-4 cursor-pointer select-none group hover:text-shop-cream transition-colors"
+										className="py-3.5 px-4 min-w-[190px] whitespace-nowrap cursor-pointer select-none group hover:text-shop-cream transition-colors"
 										title={
 											nameSortOrder === "asc"
 												? "Sorted A–Z (Click to sort Z–A)"
 												: "Click to sort A–Z"
 										}
 									>
-										<div className="inline-flex items-center space-x-1.5">
+										<div className="inline-flex items-center space-x-1.5 whitespace-nowrap">
 											<span>Guest Name</span>
 											{nameSortOrder === "asc" ? (
-												<ArrowUp className="w-3.5 h-3.5 text-shop-gold" />
+												<ArrowUp className="w-3.5 h-3.5 text-shop-gold shrink-0" />
 											) : nameSortOrder === "desc" ? (
-												<ArrowDown className="w-3.5 h-3.5 text-shop-gold" />
+												<ArrowDown className="w-3.5 h-3.5 text-shop-gold shrink-0" />
 											) : (
-												<ArrowUpDown className="w-3.5 h-3.5 text-shop-cream/40 group-hover:text-shop-cream/80 transition-colors" />
+												<ArrowUpDown className="w-3.5 h-3.5 text-shop-cream/40 group-hover:text-shop-cream/80 transition-colors shrink-0" />
 											)}
 										</div>
 									</th>
-									<th className="py-3 px-4">Mobile</th>
-									<th className="py-3 px-4">Check-In Status</th>
-									<th className="py-3 px-4">Invitation Link</th>
-									<th className="py-3 px-4 text-right">Actions</th>
+									<th className="py-3.5 px-4 min-w-[160px] whitespace-nowrap">
+										Mobile
+									</th>
+									<th className="py-3.5 px-4 min-w-[170px] whitespace-nowrap">
+										Check-In Status
+									</th>
+									<th className="py-3.5 px-4 min-w-[210px] whitespace-nowrap">
+										Invitation Link
+									</th>
+									<th className="py-3.5 px-4 min-w-[160px] text-right whitespace-nowrap">
+										Actions
+									</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-shop-cream/10">
@@ -1089,19 +1099,19 @@ export const AdminDashboard: React.FC = () => {
 											key={guest.id}
 											className="hover:bg-shop-cream/5 transition duration-150"
 										>
-											<td className="py-3.5 px-4 text-center font-mono text-shop-cream/60 text-xs">
+											<td className="py-3.5 px-4 text-center font-mono text-shop-cream/60 text-xs whitespace-nowrap">
 												{index + 1}
 											</td>
-											<td className="py-3.5 px-4 font-bold text-shop-cream text-sm">
+											<td className="py-3.5 px-4 font-bold text-shop-cream text-sm whitespace-nowrap">
 												{capitalizeName(guest.name)}
 											</td>
-											<td className="py-3.5 px-4 font-mono text-shop-cream/80">
+											<td className="py-3.5 px-4 font-mono text-shop-cream/80 whitespace-nowrap">
 												{formatPhoneDisplay(guest.phone)}
 											</td>
-											<td className="py-3.5 px-4">
+											<td className="py-3.5 px-4 whitespace-nowrap">
 												{guest.checked_in ? (
-													<div className="inline-flex items-center space-x-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full font-semibold">
-														<CheckCircle2 className="w-3.5 h-3.5" />
+													<div className="inline-flex items-center space-x-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full font-semibold whitespace-nowrap">
+														<CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
 														<span>
 															Checked In{" "}
 															{guest.checked_in_at && (
@@ -1119,32 +1129,32 @@ export const AdminDashboard: React.FC = () => {
 														</span>
 													</div>
 												) : guest.is_revoked ? (
-													<span className="inline-flex items-center space-x-1 bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full font-semibold">
+													<span className="inline-flex items-center space-x-1 bg-red-500/20 text-red-300 border border-red-500/30 px-2.5 py-1 rounded-full font-semibold whitespace-nowrap">
 														Revoked
 													</span>
 												) : (
-													<span className="inline-flex items-center space-x-1 bg-amber-500/15 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">
+													<span className="inline-flex items-center space-x-1 bg-amber-500/15 text-amber-300 border border-amber-500/20 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">
 														Pending
 													</span>
 												)}
 											</td>
-											<td className="py-3.5 px-4">
-												<div className="flex items-center space-x-1.5">
+											<td className="py-3.5 px-4 whitespace-nowrap">
+												<div className="flex items-center space-x-2 whitespace-nowrap">
 													<button
 														onClick={() =>
 															handleCopyInviteLink(guest.invite_token)
 														}
-														className="bg-shop-navy/70 hover:bg-shop-navy border border-shop-cream/15 text-shop-cream px-2.5 py-1 rounded-lg text-[11px] font-medium transition flex items-center space-x-1"
+														className="bg-shop-navy/70 hover:bg-shop-navy border border-shop-cream/15 text-shop-cream px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition inline-flex items-center space-x-1.5 whitespace-nowrap shrink-0"
 														title="Copy Invitation Link"
 													>
 														{copiedToken === guest.invite_token ? (
 															<>
-																<Check className="w-3 h-3 text-emerald-400" />
+																<Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
 																<span className="text-emerald-400">Copied</span>
 															</>
 														) : (
 															<>
-																<Copy className="w-3 h-3" />
+																<Copy className="w-3.5 h-3.5 shrink-0" />
 																<span>Copy Link</span>
 															</>
 														)}
@@ -1152,20 +1162,20 @@ export const AdminDashboard: React.FC = () => {
 
 													<button
 														onClick={() => handleWhatsApp(guest)}
-														className="bg-emerald-600/80 hover:bg-emerald-600 text-white px-2 py-1 rounded-lg text-[11px] font-medium transition flex items-center space-x-1"
+														className="bg-emerald-600/80 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition inline-flex items-center space-x-1.5 whitespace-nowrap shrink-0"
 														title="Send Invitation via WhatsApp"
 													>
-														<MessageCircle className="w-3 h-3" />
-														<span className="hidden sm:inline">WhatsApp</span>
+														<MessageCircle className="w-3.5 h-3.5 shrink-0" />
+														<span>WhatsApp</span>
 													</button>
 												</div>
 											</td>
-											<td className="py-3.5 px-4 text-right">
-												<div className="inline-flex items-center space-x-1">
+											<td className="py-3.5 px-4 text-right whitespace-nowrap">
+												<div className="inline-flex items-center justify-end space-x-1.5 whitespace-nowrap">
 													{!guest.checked_in && (
 														<button
 															onClick={() => handleManualCheckIn(guest)}
-															className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 p-1.5 rounded-lg transition"
+															className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 p-1.5 rounded-lg transition shrink-0"
 															title="Manual Check-In"
 														>
 															<UserCheck className="w-3.5 h-3.5" />
@@ -1174,7 +1184,7 @@ export const AdminDashboard: React.FC = () => {
 
 													<button
 														onClick={() => handleReissueQr(guest)}
-														className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream/70 hover:text-shop-cream p-1.5 rounded-lg transition"
+														className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream/70 hover:text-shop-cream p-1.5 rounded-lg transition shrink-0"
 														title="Reissue QR Code"
 													>
 														<QrCode className="w-3.5 h-3.5" />
@@ -1190,7 +1200,7 @@ export const AdminDashboard: React.FC = () => {
 															setGuestFormErrors({});
 															setIsAddModalOpen(true);
 														}}
-														className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream/70 hover:text-shop-cream p-1.5 rounded-lg transition"
+														className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream/70 hover:text-shop-cream p-1.5 rounded-lg transition shrink-0"
 														title="Edit Guest"
 													>
 														<Edit2 className="w-3.5 h-3.5" />
@@ -1200,7 +1210,7 @@ export const AdminDashboard: React.FC = () => {
 														onClick={() =>
 															handleDeleteGuest(guest.id, guest.name)
 														}
-														className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-1.5 rounded-lg transition"
+														className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-1.5 rounded-lg transition shrink-0"
 														title="Delete Guest"
 													>
 														<Trash2 className="w-3.5 h-3.5" />

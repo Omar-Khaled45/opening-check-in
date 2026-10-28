@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useParams } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import confetti from "canvas-confetti";
@@ -14,6 +14,7 @@ import {
 	Download,
 	ShieldAlert,
 	Lock,
+	X,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
@@ -49,7 +50,16 @@ export const GuestPortal: React.FC = () => {
 	const [verifiedData, setVerifiedData] = useState<VerifyGuestResponse | null>(
 		null,
 	);
+	const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+	const [passImageUrl, setPassImageUrl] = useState<string | null>(null);
+	const [isPassPreviewOpen, setIsPassPreviewOpen] = useState(false);
 	const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const passAssetsRef = useRef<{
+		dataUrl: string;
+		blob: Blob;
+		file: File;
+		fileName: string;
+	} | null>(null);
 
 	// Validate the invitation token from the URL on page load
 	useEffect(() => {
@@ -216,16 +226,15 @@ export const GuestPortal: React.FC = () => {
 		}
 	};
 
-	const handleDownloadQR = async () => {
+	const buildPassAssets = useCallback(() => {
 		const qrCanvas = qrCanvasRef.current;
-		if (!qrCanvas) return;
+		if (!qrCanvas || !verifiedData) return null;
 
 		try {
-			if (document.fonts?.ready) {
-				await document.fonts.ready;
-			}
+			const qrDataUrl = qrCanvas.toDataURL("image/png");
+			setQrImageUrl(qrDataUrl);
 		} catch {
-			// Continue with system fallback fonts if font loading check fails
+			// Ignore QR preview data URL error
 		}
 
 		const width = 1080;
@@ -234,7 +243,7 @@ export const GuestPortal: React.FC = () => {
 		exportCanvas.width = width;
 		exportCanvas.height = height;
 		const ctx = exportCanvas.getContext("2d");
-		if (!ctx) return;
+		if (!ctx) return null;
 
 		const drawRoundedRect = (
 			x: number,
@@ -672,18 +681,115 @@ export const GuestPortal: React.FC = () => {
 		ctx.fill();
 		ctx.stroke();
 
-		const pngUrl = exportCanvas.toDataURL("image/png");
+		const dataUrl = exportCanvas.toDataURL("image/png");
 		const safeName = getFirstName(verifiedData?.guest_name || "guest")
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "");
+		const fileName = `the-shop-pass-${safeName || "guest"}.png`;
 
+		const base64Data = dataUrl.split(",")[1] || "";
+		const byteString = atob(base64Data);
+		const byteArray = new Uint8Array(byteString.length);
+		for (let i = 0; i < byteString.length; i++) {
+			byteArray[i] = byteString.charCodeAt(i);
+		}
+		const blob = new Blob([byteArray], { type: "image/png" });
+		const file = new File([blob], fileName, {
+			type: "image/png",
+			lastModified: Date.now(),
+		});
+
+		const assets = { dataUrl, blob, file, fileName };
+		passAssetsRef.current = assets;
+		setPassImageUrl(dataUrl);
+		return assets;
+	}, [verifiedData]);
+
+	// Pre-generate high-resolution PNG pass image as soon as guest is verified
+	useEffect(() => {
+		passAssetsRef.current = null;
+		if (!verifiedData) return;
+
+		let cancelled = false;
+		const preparePassImage = async () => {
+			await Promise.resolve();
+			if (cancelled) return;
+			buildPassAssets();
+			try {
+				if (document.fonts?.ready) {
+					await document.fonts.ready;
+				}
+			} catch {
+				// Proceed with fallback fonts
+			}
+			if (!cancelled) {
+				buildPassAssets();
+			}
+		};
+
+		preparePassImage();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [verifiedData, buildPassAssets]);
+
+	const triggerBlobDownload = (blob: Blob, fileName: string) => {
+		const blobUrl = URL.createObjectURL(blob);
 		const link = document.createElement("a");
-		link.href = pngUrl;
-		link.setAttribute("download", `the-shop-pass-${safeName || "guest"}.png`);
+		link.href = blobUrl;
+		link.download = fileName;
 		document.body.appendChild(link);
 		link.click();
-		document.body.removeChild(link);
+		setTimeout(() => {
+			document.body.removeChild(link);
+			URL.revokeObjectURL(blobUrl);
+		}, 1000);
+	};
+
+	const handleDownloadQR = async () => {
+		// Retrieve pre-built PNG assets or build synchronously to preserve mobile user-gesture activation
+		const assets = passAssetsRef.current || buildPassAssets();
+		if (!assets) return;
+
+		const ua = navigator.userAgent || "";
+		const isIOS =
+			/iPad|iPhone|iPod/i.test(ua) ||
+			(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+		const isAndroid = /Android/i.test(ua);
+		const isMobile = isIOS || isAndroid || /Mobile/i.test(ua);
+
+		if (isMobile) {
+			// On mobile (iOS & Android), use Web Share API with only `{ files: [file] }`
+			// so the native sheet offers "Save Image" directly into the Photos app (instead of downloading to Files as a document/PDF)
+			if (
+				typeof navigator.share === "function" &&
+				typeof navigator.canShare === "function"
+			) {
+				try {
+					if (navigator.canShare({ files: [assets.file] })) {
+						await navigator.share({ files: [assets.file] });
+						return;
+					}
+				} catch (err: unknown) {
+					if (err instanceof Error && err.name === "AbortError") {
+						return;
+					}
+				}
+			}
+
+			// Fallback for mobile in-app browsers where Web Share for files isn't supported:
+			// On Android, also trigger proper binary image/png Blob download; on all mobile devices, open the image preview modal so user can press & hold -> "Save to Photos"
+			if (isAndroid) {
+				triggerBlobDownload(assets.blob, assets.fileName);
+			}
+			setIsPassPreviewOpen(true);
+			return;
+		}
+
+		// Desktop browsers: download PNG Blob directly
+		triggerBlobDownload(assets.blob, assets.fileName);
 	};
 
 	return (
@@ -881,16 +987,26 @@ export const GuestPortal: React.FC = () => {
 								{/* QR Code Container */}
 								<div className="inline-block p-4 bg-white rounded-2xl shadow-inner border border-shop-navy/10 mb-4">
 									{verifiedData.qr_token && (
-										<QRCodeCanvas
-											ref={qrCanvasRef}
-											value={verifiedData.qr_token}
-											size={400}
-											style={{ width: 200, height: 200 }}
-											level="H"
-											includeMargin={true}
-											bgColor="#ffffff"
-											fgColor="#000000"
-										/>
+										<>
+											<QRCodeCanvas
+												ref={qrCanvasRef}
+												value={verifiedData.qr_token}
+												size={400}
+												style={{ width: 200, height: 200 }}
+												className={qrImageUrl ? "hidden" : "block"}
+												level="H"
+												includeMargin={true}
+												bgColor="#ffffff"
+												fgColor="#000000"
+											/>
+											{qrImageUrl && (
+												<img
+													src={qrImageUrl}
+													alt="Official Entry Pass QR Code"
+													className="w-[200px] h-[200px] block mx-auto"
+												/>
+											)}
+										</>
 									)}
 								</div>
 
@@ -934,7 +1050,7 @@ export const GuestPortal: React.FC = () => {
 									className="w-full bg-shop-navy hover:bg-shop-dark text-shop-cream text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center space-x-2 shadow-md"
 								>
 									<Download className="w-4 h-4" />
-									<span>Download QR Code Image</span>
+									<span>Download QR Code</span>
 								</button>
 							</div>
 						</div>
@@ -945,6 +1061,53 @@ export const GuestPortal: React.FC = () => {
 					</div>
 				)}
 			</main>
+
+			{/* Mobile Save-to-Photos Image Preview Modal */}
+			{isPassPreviewOpen && passImageUrl && (
+				<div
+					onClick={() => setIsPassPreviewOpen(false)}
+					className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+				>
+					<div
+						onClick={(e) => e.stopPropagation()}
+						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-sm w-full rounded-2xl p-4 shadow-2xl relative text-center"
+					>
+						<button
+							type="button"
+							onClick={() => setIsPassPreviewOpen(false)}
+							className="absolute top-3 right-3 text-shop-cream/60 hover:text-shop-cream p-1"
+							aria-label="Close preview"
+						>
+							<X className="w-5 h-5" />
+						</button>
+
+						<h3 className="font-display text-xl font-bold uppercase tracking-wider text-shop-cream mb-1">
+							Save Pass to Photos
+						</h3>
+						<p className="text-xs text-shop-cream/80 mb-3 leading-relaxed">
+							Press and hold the pass image below, then tap{" "}
+							<strong className="text-shop-gold">Save to Photos</strong> (or{" "}
+							<strong className="text-shop-gold">Add to Photos</strong>).
+						</p>
+
+						<div className="rounded-xl overflow-hidden border border-shop-cream/20 shadow-lg bg-shop-navy/50 max-h-[65vh] flex items-center justify-center">
+							<img
+								src={passImageUrl}
+								alt="The Shop Digital Entry Pass"
+								className="max-h-[65vh] w-auto object-contain mx-auto block"
+							/>
+						</div>
+
+						<button
+							type="button"
+							onClick={() => setIsPassPreviewOpen(false)}
+							className="mt-3 w-full bg-shop-cream text-shop-navy font-bold text-xs py-2.5 px-4 rounded-xl transition hover:bg-shop-cream-light"
+						>
+							Done
+						</button>
+					</div>
+				</div>
+			)}
 
 			{/* Footer */}
 			<footer className="relative z-10 w-full max-w-4xl mx-auto px-6 py-6 text-center text-xs text-shop-cream/50">
