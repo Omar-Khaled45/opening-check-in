@@ -145,7 +145,6 @@ export const AdminDashboard: React.FC = () => {
 		}
 	};
 
-	// Close Add/Edit modal and reset input fields
 	const handleCloseGuestModal = () => {
 		if (isSavingGuest) return;
 		setIsAddModalOpen(false);
@@ -153,7 +152,6 @@ export const AdminDashboard: React.FC = () => {
 		setGuestForm({ name: "", phone: "" });
 	};
 
-	// Load guests from database
 	const fetchGuests = async () => {
 		try {
 			const { data, error } = await supabase
@@ -176,7 +174,6 @@ export const AdminDashboard: React.FC = () => {
 	useEffect(() => {
 		fetchGuests();
 
-		// Subscribe to Realtime changes on guests table
 		const channel = supabase
 			.channel("admin_guests_realtime")
 			.on(
@@ -193,7 +190,6 @@ export const AdminDashboard: React.FC = () => {
 		};
 	}, []);
 
-	// Compute metrics
 	const totalGuests = guests.length;
 	const checkedInCount = guests.filter((g) => g.checked_in).length;
 	const remainingCount = totalGuests - checkedInCount;
@@ -387,7 +383,6 @@ export const AdminDashboard: React.FC = () => {
 				loadingText: "Deleting All...",
 				cancelText: "Cancel",
 				onConfirm: async () => {
-					// Clean up check_ins if permitted, then delete all guests
 					await supabase
 						.from("check_ins")
 						.delete()
@@ -459,7 +454,6 @@ export const AdminDashboard: React.FC = () => {
 		);
 	};
 
-	// Reissue QR code (and check out guest if already checked in so scanner can scan again)
 	const handleReissueQr = (guest: Guest) => {
 		const displayName = capitalizeName(guest.name);
 		const wasCheckedIn = guest.checked_in;
@@ -520,11 +514,8 @@ export const AdminDashboard: React.FC = () => {
 		);
 	};
 
-	// Base URL for invitations (defaults to Vercel production domain)
 	const getAppOrigin = () => {
-		return (
-			import.meta.env.VITE_APP_URL || "https://the-shop-invitation.vercel.app"
-		).replace(/\/$/, "");
+		return import.meta.env.VITE_APP_URL.replace(/\/$/, "");
 	};
 
 	// Copy invitation link

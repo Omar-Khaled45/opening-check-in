@@ -9,7 +9,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
 	);
 }
 
-export const supabase = createClient(
-	supabaseUrl || "https://gszxksvkjerimmvhphdq.supabase.co",
-	supabaseAnonKey || "",
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey || "");

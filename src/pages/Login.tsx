@@ -73,8 +73,8 @@ export const Login: React.FC = () => {
 				<div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl border border-shop-cream/15">
 					<form onSubmit={handleLogin} className="space-y-4">
 						<div>
-							<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
-								Authorized Email
+							<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-2">
+								Email
 							</label>
 							<div className="relative">
 								<Mail className="w-4 h-4 text-shop-cream/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -82,7 +82,7 @@ export const Login: React.FC = () => {
 									type="email"
 									value={email}
 									onChange={(e) => setEmail(e.target.value)}
-									placeholder="admin@theshop.events"
+									placeholder="Enter Email"
 									required
 									autoFocus
 									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl pl-10 pr-4 py-3 text-shop-cream placeholder-shop-cream/30 focus:outline-none focus:border-shop-gold text-sm transition"
@@ -91,7 +91,7 @@ export const Login: React.FC = () => {
 						</div>
 
 						<div>
-							<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
+							<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-2">
 								Password
 							</label>
 							<div className="relative">

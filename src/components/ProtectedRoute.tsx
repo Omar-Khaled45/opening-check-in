@@ -30,13 +30,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 		return <Navigate to="/login" state={{ from: location }} replace />;
 	}
 
-	// If specific roles required
 	if (allowedRoles && role && !allowedRoles.includes(role)) {
-		// If scanner tries to visit admin, redirect to scanner
 		if (role === "scanner") {
 			return <Navigate to="/scanner" replace />;
 		}
-		// If admin is allowed on both admin and scanner, fallback to /admin
+
 		return <Navigate to="/admin" replace />;
 	}
 

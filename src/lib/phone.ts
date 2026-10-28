@@ -1,18 +1,7 @@
-/**
- * Normalizes Egyptian mobile phone numbers to a consistent digits-only format.
- * Matches backend normalize_phone SQL function.
- * Examples:
- *   "01012345678" -> "201012345678"
- *   "+20 10 1234 5678" -> "201012345678"
- *   "201012345678" -> "201012345678"
- *   "1012345678" -> "201012345678"
- */
 export function normalizeEgyptianPhone(input: string): string {
 	if (!input) return "";
-	// Remove all non-digits
 	const cleaned = input.replace(/\D/g, "");
 
-	// 11 digits starting with 01 (010, 011, 012, 015)
 	if (/^01[0125]\d{8}$/.test(cleaned)) {
 		return "20" + cleaned.slice(1);
 	}
@@ -35,20 +24,12 @@ export function normalizeEgyptianPhone(input: string): string {
 	return cleaned;
 }
 
-/**
- * Validates whether the given phone string is a valid Egyptian mobile number.
- * Valid prefixes: 010, 011, 012, 015 (with or without +20 / 0020 / 20 country code).
- */
 export function isValidEgyptianPhone(input: string): boolean {
 	if (!input) return false;
 	const normalized = normalizeEgyptianPhone(input.trim());
 	return /^201[0125]\d{8}$/.test(normalized);
 }
 
-/**
- * Capitalizes the initials of each word in a guest's full name.
- * Example: "youssef mansour" -> "Youssef Mansour"
- */
 export function capitalizeName(name: string): string {
 	if (!name) return "";
 	return name
@@ -69,9 +50,6 @@ export function capitalizeName(name: string): string {
 		.join(" ");
 }
 
-/**
- * Format Egyptian phone number for display (e.g., "+20 10 1234 5678" or "010 1234 5678")
- */
 export function formatPhoneDisplay(phone: string): string {
 	const norm = normalizeEgyptianPhone(phone);
 	if (norm.length === 12 && norm.startsWith("20")) {
@@ -83,13 +61,15 @@ export function formatPhoneDisplay(phone: string): string {
 	return phone;
 }
 
-/**
- * Generates a cryptographically strong, URL-safe random token.
- */
 export function generateToken(length = 24): string {
 	const chars =
 		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 	const array = new Uint8Array(length);
 	crypto.getRandomValues(array);
 	return Array.from(array, (byte) => chars[byte % chars.length]).join("");
+}
+
+export function isValidInviteTokenFormat(token: string): boolean {
+	if (!token) return false;
+	return /^(?:[a-zA-Z0-9]{20,24}|inv_[a-zA-Z0-9]{8,24})$/.test(token.trim());
 }

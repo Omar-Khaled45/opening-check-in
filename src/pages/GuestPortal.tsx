@@ -12,20 +12,37 @@ import {
 	CheckCircle2,
 	AlertCircle,
 	Download,
+	ShieldAlert,
+	Lock,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { capitalizeName } from "../lib/phone";
+import {
+	capitalizeName,
+	isValidEgyptianPhone,
+	isValidInviteTokenFormat,
+} from "../lib/phone";
 import type { VerifyGuestResponse } from "../types";
+
+type TokenStatus = "checking" | "valid" | "invalid" | "missing";
 
 export const GuestPortal: React.FC = () => {
 	const [searchParams] = useSearchParams();
 	const { token: routeToken } = useParams<{ token?: string }>();
 
 	// Support ?token=..., ?invite=..., or /invite/:token
-	const inviteTokenFromUrl =
-		searchParams.get("token") || searchParams.get("invite") || routeToken || "";
+	const inviteTokenFromUrl = (
+		searchParams.get("token") ||
+		searchParams.get("invite") ||
+		routeToken ||
+		""
+	).trim();
 
-	const [tokenInput, setTokenInput] = useState(inviteTokenFromUrl);
+	const [tokenStatus, setTokenStatus] = useState<TokenStatus>(() => {
+		if (!inviteTokenFromUrl) return "missing";
+		if (!isValidInviteTokenFormat(inviteTokenFromUrl)) return "invalid";
+		return "checking";
+	});
+	const [tokenErrorReason, setTokenErrorReason] = useState<string | null>(null);
 	const [phone, setPhone] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -34,22 +51,102 @@ export const GuestPortal: React.FC = () => {
 	);
 	const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+	// Validate the invitation token from the URL on page load
 	useEffect(() => {
-		if (inviteTokenFromUrl) {
-			setTokenInput(inviteTokenFromUrl);
-		}
-	}, [inviteTokenFromUrl]);
+		let isCancelled = false;
+		setVerifiedData(null);
+		setError(null);
 
-	const activeToken = inviteTokenFromUrl || tokenInput.trim();
+		if (!inviteTokenFromUrl) {
+			setTokenStatus("missing");
+			setTokenErrorReason(null);
+			return;
+		}
+
+		if (!isValidInviteTokenFormat(inviteTokenFromUrl)) {
+			setTokenStatus("invalid");
+			setTokenErrorReason(
+				"This invitation link is invalid or malformed. Please use the exact link sent to you.",
+			);
+			return;
+		}
+
+		const verifyTokenExists = async () => {
+			setTokenStatus("checking");
+			setTokenErrorReason(null);
+
+			try {
+				const { data, error: rpcError } = await supabase.rpc(
+					"verify_guest_invite",
+					{
+						p_invite_token: inviteTokenFromUrl,
+						p_phone: "__token_check__",
+					},
+				);
+
+				if (isCancelled) return;
+
+				if (rpcError) {
+					setTokenStatus("invalid");
+					setTokenErrorReason(
+						"Unable to verify this invitation link right now. Please try again shortly.",
+					);
+					return;
+				}
+
+				const res = data as VerifyGuestResponse | null;
+				if (res?.success) {
+					setTokenStatus("valid");
+					return;
+				}
+
+				const errMsg = (res?.error || "").toLowerCase();
+				// If the RPC reached the phone number comparison step, the token itself exists and is active
+				const isPhoneMismatchError =
+					errMsg.includes("phone") ||
+					errMsg.includes("mobile") ||
+					errMsg.includes("number");
+
+				if (isPhoneMismatchError) {
+					setTokenStatus("valid");
+				} else {
+					setTokenStatus("invalid");
+					setTokenErrorReason(
+						res?.error ||
+							"This invitation link is not recognized or is no longer valid.",
+					);
+				}
+			} catch {
+				if (!isCancelled) {
+					setTokenStatus("invalid");
+					setTokenErrorReason(
+						"Unable to verify this invitation link. Please check your connection and try again.",
+					);
+				}
+			}
+		};
+
+		verifyTokenExists();
+
+		return () => {
+			isCancelled = true;
+		};
+	}, [inviteTokenFromUrl]);
 
 	const handleVerify = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!activeToken) {
-			setError("Please provide a valid invitation link or invitation code.");
+		if (!inviteTokenFromUrl || tokenStatus !== "valid") {
+			setError("Please open a valid personal invitation link.");
 			return;
 		}
 		if (!phone.trim()) {
 			setError("Please enter your mobile phone number.");
+			return;
+		}
+		if (!isValidEgyptianPhone(phone.trim())) {
+			setError(
+				"Please enter a valid Egyptian mobile number (e.g. 01012345678 or +201xxxxxxxxx).",
+			);
 			return;
 		}
 
@@ -60,7 +157,7 @@ export const GuestPortal: React.FC = () => {
 			const { data, error: rpcError } = await supabase.rpc(
 				"verify_guest_invite",
 				{
-					p_invite_token: activeToken,
+					p_invite_token: inviteTokenFromUrl,
 					p_phone: phone.trim(),
 				},
 			);
@@ -75,6 +172,19 @@ export const GuestPortal: React.FC = () => {
 
 			const res = data as VerifyGuestResponse;
 			if (!res || !res.success) {
+				const errMsg = (res?.error || "").toLowerCase();
+				const isPhoneMismatchError =
+					errMsg.includes("phone") ||
+					errMsg.includes("mobile") ||
+					errMsg.includes("number");
+
+				if (res?.error && !isPhoneMismatchError) {
+					setTokenStatus("invalid");
+					setTokenErrorReason(res.error);
+					setLoading(false);
+					return;
+				}
+
 				setError(
 					res?.error ||
 						"Verification failed. Please check the mobile number entered.",
@@ -183,104 +293,127 @@ export const GuestPortal: React.FC = () => {
 			{/* Main Content */}
 			<main className="relative z-10 max-w-xl w-full mx-auto px-4 py-8 flex-1 flex flex-col justify-center">
 				{!verifiedData ? (
-					/* Phone Verification Card */
-					<div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl relative">
-						<div className="mb-6 text-center">
-							<div className="inline-block mb-3 px-3 py-1 rounded-full bg-shop-cream/10 border border-shop-cream/20 text-xs font-semibold tracking-wider uppercase text-shop-cream">
-								VIP Access
-							</div>
-							<h1 className="font-display text-4xl sm:text-5xl uppercase tracking-wider text-shop-cream mb-2 font-bold">
-								The Shop
-							</h1>
-							<p className="text-shop-cream/80 text-sm max-w-md mx-auto leading-relaxed">
-								You are cordially invited to celebrate the grand private opening
-								of The Shop. Please enter your registered mobile number to
-								retrieve your entry pass.
+					tokenStatus === "checking" ? (
+						/* Validating Token Loading Card */
+						<div className="glass-panel rounded-2xl p-8 sm:p-10 shadow-2xl text-center">
+							<div className="w-12 h-12 border-3 border-shop-cream/20 border-t-shop-gold rounded-full animate-spin mx-auto mb-4" />
+							<h2 className="font-display text-2xl sm:text-3xl uppercase tracking-wider text-shop-cream font-bold mb-2">
+								Verifying Invitation
+							</h2>
+							<p className="text-shop-cream/70 text-xs sm:text-sm max-w-sm mx-auto leading-relaxed">
+								Please wait while we validate your personal invitation link...
 							</p>
 						</div>
-
-						{/* Event Overview Pill Grid */}
-						<div className="grid grid-cols-2 gap-2.5 mb-8 text-xs bg-shop-navy/40 p-3 rounded-xl border border-shop-cream/10">
-							<div className="flex items-center space-x-2 text-shop-cream/90">
-								<Calendar className="w-4 h-4 text-shop-gold shrink-0" />
-								<span>Dec 12, 2026</span>
+					) : tokenStatus !== "valid" ? (
+						/* Missing or Invalid Token Screen */
+						<div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl text-center border border-red-500/20">
+							<div className="w-14 h-14 rounded-2xl bg-red-500/15 border border-red-500/30 mx-auto mb-4 flex items-center justify-center">
+								{tokenStatus === "missing" ? (
+									<Lock className="w-7 h-7 text-shop-gold" />
+								) : (
+									<ShieldAlert className="w-7 h-7 text-red-400" />
+								)}
 							</div>
-							<div className="flex items-center space-x-2 text-shop-cream/90">
-								<Clock className="w-4 h-4 text-shop-gold shrink-0" />
-								<span>6:00 PM (Cairo)</span>
+							<div className="inline-block mb-3 px-3 py-1 rounded-full bg-shop-cream/10 border border-shop-cream/20 text-xs font-semibold tracking-wider uppercase text-shop-cream">
+								Private Access Only
 							</div>
-							<div className="flex items-center space-x-2 text-shop-cream/90 col-span-2">
-								<MapPin className="w-4 h-4 text-shop-gold shrink-0" />
-								<span>The Shop, Cairo, Egypt</span>
+							<h1 className="font-display text-3xl sm:text-4xl uppercase tracking-wider text-shop-cream mb-3 font-bold">
+								{tokenStatus === "missing"
+									? "Invitation Required"
+									: "Invalid Invitation Link"}
+							</h1>
+							<p className="text-shop-cream/75 text-sm max-w-md mx-auto leading-relaxed mb-6">
+								{tokenStatus === "missing"
+									? "Access to The Shop Private Opening is strictly by personal invitation. Please open the unique invitation link sent to your mobile number."
+									: tokenErrorReason ||
+										"This invitation link is not recognized or is no longer active. Please check the exact link sent to your mobile number."}
+							</p>
+							<div className="bg-shop-navy/40 border border-shop-cream/10 rounded-xl p-3.5 text-xs text-shop-cream/60">
+								If you believe this is an error, please contact the event
+								organizer for a new invitation link.
 							</div>
 						</div>
-
-						<form onSubmit={handleVerify} className="space-y-4">
-							{!inviteTokenFromUrl && (
-								<div>
-									<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
-										Invitation Code
-									</label>
-									<input
-										type="text"
-										value={tokenInput}
-										onChange={(e) => setTokenInput(e.target.value)}
-										placeholder="e.g. inv_ab12cd34"
-										required
-										className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-3 text-shop-cream placeholder-shop-cream/40 focus:outline-none focus:border-shop-gold text-sm transition"
-									/>
-									<p className="text-[11px] text-shop-cream/50 mt-1">
-										Found in your personal invite link.
-									</p>
+					) : (
+						/* Phone Verification Card */
+						<div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl relative">
+							<div className="mb-6 text-center">
+								<div className="inline-block mb-3 px-3 py-1 rounded-full bg-shop-cream/10 border border-shop-cream/20 text-xs font-semibold tracking-wider uppercase text-shop-cream">
+									VIP Access
 								</div>
-							)}
-
-							<div>
-								<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
-									Registered Mobile Number
-								</label>
-								<div className="relative">
-									<input
-										type="tel"
-										value={phone}
-										onChange={(e) => setPhone(e.target.value)}
-										placeholder="01012345678 or +201..."
-										required
-										autoFocus
-										className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-3 text-shop-cream placeholder-shop-cream/40 focus:outline-none focus:border-shop-gold text-sm tracking-wide transition font-mono"
-									/>
-								</div>
-								<p className="text-[11px] text-shop-cream/50 mt-1">
-									Enter the Egyptian phone number your invitation was sent to.
+								<h1 className="font-display text-4xl sm:text-5xl uppercase tracking-wider text-shop-cream mb-2 font-bold">
+									The Shop
+								</h1>
+								<p className="text-shop-cream/80 text-sm max-w-md mx-auto leading-relaxed">
+									You are cordially invited to celebrate the grand private
+									opening of The Shop. Please enter your registered mobile
+									number to retrieve your entry pass.
 								</p>
 							</div>
 
-							{error && (
-								<div className="bg-red-500/15 border border-red-500/30 text-red-200 text-xs p-3.5 rounded-xl flex items-start space-x-2">
-									<AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-									<span>{error}</span>
+							{/* Event Overview Pill Grid */}
+							<div className="grid grid-cols-2 gap-2.5 mb-8 text-xs bg-shop-navy/40 p-3 rounded-xl border border-shop-cream/10">
+								<div className="flex items-center space-x-2 text-shop-cream/90">
+									<Calendar className="w-4 h-4 text-shop-gold shrink-0" />
+									<span>Dec 12, 2026</span>
 								</div>
-							)}
+								<div className="flex items-center space-x-2 text-shop-cream/90">
+									<Clock className="w-4 h-4 text-shop-gold shrink-0" />
+									<span>6:00 PM (Cairo)</span>
+								</div>
+								<div className="flex items-center space-x-2 text-shop-cream/90 col-span-2">
+									<MapPin className="w-4 h-4 text-shop-gold shrink-0" />
+									<span>The Shop, Cairo, Egypt</span>
+								</div>
+							</div>
 
-							<button
-								type="submit"
-								disabled={loading}
-								className="w-full bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold py-3.5 px-6 rounded-xl transition duration-200 flex items-center justify-center space-x-2 shadow-lg disabled:opacity-50 text-sm tracking-wide uppercase font-sans"
-							>
-								{loading ? (
-									<>
-										<div className="w-4 h-4 border-2 border-shop-navy/30 border-t-shop-navy rounded-full animate-spin" />
-										<span>Verifying Invitation...</span>
-									</>
-								) : (
-									<>
-										<span>Unlock Digital Pass</span>
-										<ArrowRight className="w-4 h-4" />
-									</>
+							<form onSubmit={handleVerify} className="space-y-4">
+								<div>
+									<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
+										Registered Mobile Number
+									</label>
+									<div className="relative">
+										<input
+											type="tel"
+											value={phone}
+											onChange={(e) => setPhone(e.target.value)}
+											placeholder="01012345678 or +201..."
+											required
+											autoFocus
+											className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-3 text-shop-cream placeholder-shop-cream/40 focus:outline-none focus:border-shop-gold text-sm tracking-wide transition font-mono"
+										/>
+									</div>
+									<p className="text-[11px] text-shop-cream/50 mt-1">
+										Enter the Egyptian phone number your invitation was sent to.
+									</p>
+								</div>
+
+								{error && (
+									<div className="bg-red-500/15 border border-red-500/30 text-red-200 text-xs p-3.5 rounded-xl flex items-start space-x-2">
+										<AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+										<span>{error}</span>
+									</div>
 								)}
-							</button>
-						</form>
-					</div>
+
+								<button
+									type="submit"
+									disabled={loading}
+									className="w-full bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold py-3.5 px-6 rounded-xl transition duration-200 flex items-center justify-center space-x-2 shadow-lg disabled:opacity-50 text-sm tracking-wide uppercase font-sans"
+								>
+									{loading ? (
+										<>
+											<div className="w-4 h-4 border-2 border-shop-navy/30 border-t-shop-navy rounded-full animate-spin" />
+											<span>Verifying Invitation...</span>
+										</>
+									) : (
+										<>
+											<span>Unlock Digital Pass</span>
+											<ArrowRight className="w-4 h-4" />
+										</>
+									)}
+								</button>
+							</form>
+						</div>
+					)
 				) : (
 					/* Personalized Digital Invitation Pass */
 					<div className="animate-fadeIn">
