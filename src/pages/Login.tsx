@@ -1,11 +1,15 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Lock, Mail, ArrowRight, ShieldAlert } from "lucide-react";
+import { Lock, Mail, ArrowRight, ShieldAlert, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export const Login: React.FC = () => {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const [fieldErrors, setFieldErrors] = useState<{
+		email?: string;
+		password?: string;
+	}>({});
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
@@ -16,10 +20,30 @@ export const Login: React.FC = () => {
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setError(null);
+
+		const trimmedEmail = email.trim();
+		const errors: { email?: string; password?: string } = {};
+
+		if (!trimmedEmail) {
+			errors.email = "Please enter your email address.";
+		} else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+			errors.email = "Please enter a valid email address.";
+		}
+
+		if (!password) {
+			errors.password = "Please enter your password.";
+		}
+
+		if (errors.email || errors.password) {
+			setFieldErrors(errors);
+			return;
+		}
+
+		setFieldErrors({});
 		setLoading(true);
 
 		try {
-			const { error: authError, role } = await signIn(email, password);
+			const { error: authError, role } = await signIn(trimmedEmail, password);
 
 			if (authError) {
 				setError(authError.message || "Invalid email or password.");
@@ -71,7 +95,7 @@ export const Login: React.FC = () => {
 
 				{/* Login Card */}
 				<div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl border border-shop-cream/15">
-					<form onSubmit={handleLogin} className="space-y-4">
+					<form onSubmit={handleLogin} noValidate className="space-y-4">
 						<div>
 							<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-2">
 								Email
@@ -81,13 +105,29 @@ export const Login: React.FC = () => {
 								<input
 									type="email"
 									value={email}
-									onChange={(e) => setEmail(e.target.value)}
+									onChange={(e) => {
+										setEmail(e.target.value);
+										if (fieldErrors.email) {
+											setFieldErrors((prev) => ({ ...prev, email: undefined }));
+										}
+										if (error) setError(null);
+									}}
 									placeholder="Enter Email"
-									required
 									autoFocus
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl pl-10 pr-4 py-3 text-shop-cream placeholder-shop-cream/30 focus:outline-none focus:border-shop-gold text-sm transition"
+									aria-invalid={Boolean(fieldErrors.email)}
+									className={`w-full bg-shop-navy/80 border rounded-xl pl-10 pr-4 py-3 text-shop-cream placeholder-shop-cream/30 focus:outline-none text-sm transition ${
+										fieldErrors.email
+											? "border-red-500 focus:border-red-500"
+											: "border-shop-cream/20 focus:border-shop-gold"
+									}`}
 								/>
 							</div>
+							{fieldErrors.email && (
+								<p className="text-xs text-red-400 mt-1.5 flex items-start space-x-1.5">
+									<AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+									<span>{fieldErrors.email}</span>
+								</p>
+							)}
 						</div>
 
 						<div>
@@ -99,12 +139,31 @@ export const Login: React.FC = () => {
 								<input
 									type="password"
 									value={password}
-									onChange={(e) => setPassword(e.target.value)}
+									onChange={(e) => {
+										setPassword(e.target.value);
+										if (fieldErrors.password) {
+											setFieldErrors((prev) => ({
+												...prev,
+												password: undefined,
+											}));
+										}
+										if (error) setError(null);
+									}}
 									placeholder="••••••••••••"
-									required
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl pl-10 pr-4 py-3 text-shop-cream placeholder-shop-cream/30 focus:outline-none focus:border-shop-gold text-sm transition"
+									aria-invalid={Boolean(fieldErrors.password)}
+									className={`w-full bg-shop-navy/80 border rounded-xl pl-10 pr-4 py-3 text-shop-cream placeholder-shop-cream/30 focus:outline-none text-sm transition ${
+										fieldErrors.password
+											? "border-red-500 focus:border-red-500"
+											: "border-shop-cream/20 focus:border-shop-gold"
+									}`}
 								/>
 							</div>
+							{fieldErrors.password && (
+								<p className="text-xs text-red-400 mt-1.5 flex items-start space-x-1.5">
+									<AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+									<span>{fieldErrors.password}</span>
+								</p>
+							)}
 						</div>
 
 						{error && (

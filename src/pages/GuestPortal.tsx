@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import {
-	capitalizeName,
+	getFirstName,
 	isValidEgyptianPhone,
 	isValidInviteTokenFormat,
 } from "../lib/phone";
@@ -221,8 +221,7 @@ export const GuestPortal: React.FC = () => {
 		if (!canvas) return;
 
 		const pngUrl = canvas.toDataURL("image/png");
-		const safeName = (verifiedData?.guest_name || "guest")
-			.trim()
+		const safeName = getFirstName(verifiedData?.guest_name || "guest")
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "");
@@ -366,7 +365,7 @@ export const GuestPortal: React.FC = () => {
 								</div>
 							</div>
 
-							<form onSubmit={handleVerify} className="space-y-4">
+							<form onSubmit={handleVerify} noValidate className="space-y-4">
 								<div>
 									<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
 										Registered Mobile Number
@@ -375,24 +374,31 @@ export const GuestPortal: React.FC = () => {
 										<input
 											type="tel"
 											value={phone}
-											onChange={(e) => setPhone(e.target.value)}
+											onChange={(e) => {
+												setPhone(e.target.value);
+												if (error) setError(null);
+											}}
 											placeholder="01012345678 or +201..."
-											required
 											autoFocus
-											className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-3 text-shop-cream placeholder-shop-cream/40 focus:outline-none focus:border-shop-gold text-sm tracking-wide transition font-mono"
+											aria-invalid={Boolean(error)}
+											className={`w-full bg-shop-navy/80 border rounded-xl px-4 py-3 text-shop-cream placeholder-shop-cream/40 focus:outline-none text-sm tracking-wide transition font-mono ${
+												error
+													? "border-red-500 focus:border-red-500"
+													: "border-shop-cream/20 focus:border-shop-gold"
+											}`}
 										/>
 									</div>
-									<p className="text-[11px] text-shop-cream/50 mt-1">
-										Enter the Egyptian phone number your invitation was sent to.
-									</p>
+									{error ? (
+										<p className="text-xs text-red-400 mt-1.5 flex items-start space-x-1.5">
+											<AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+											<span>{error}</span>
+										</p>
+									) : (
+										<p className="text-[11px] text-shop-cream/50 mt-1">
+											Enter the Egyptian phone number your invitation was sent to.
+										</p>
+									)}
 								</div>
-
-								{error && (
-									<div className="bg-red-500/15 border border-red-500/30 text-red-200 text-xs p-3.5 rounded-xl flex items-start space-x-2">
-										<AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-										<span>{error}</span>
-									</div>
-								)}
 
 								<button
 									type="submit"
@@ -444,7 +450,7 @@ export const GuestPortal: React.FC = () => {
 									Admit One
 								</p>
 								<h3 className="font-display text-3xl sm:text-4xl tracking-wide font-black text-shop-navy mb-4">
-									{capitalizeName(verifiedData.guest_name || "")}
+									{getFirstName(verifiedData.guest_name || "")}
 								</h3>
 
 								{/* QR Code Container */}

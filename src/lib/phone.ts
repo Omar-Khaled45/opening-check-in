@@ -50,6 +50,12 @@ export function capitalizeName(name: string): string {
 		.join(" ");
 }
 
+export function getFirstName(name: string): string {
+	if (!name) return "";
+	const firstWord = name.trim().split(/\s+/)[0] || "";
+	return capitalizeName(firstWord);
+}
+
 export function formatPhoneDisplay(phone: string): string {
 	const norm = normalizeEgyptianPhone(phone);
 	if (norm.length === 12 && norm.startsWith("20")) {

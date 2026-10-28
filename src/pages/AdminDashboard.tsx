@@ -81,6 +81,10 @@ export const AdminDashboard: React.FC = () => {
 	const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 	const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
 	const [guestForm, setGuestForm] = useState({ name: "", phone: "" });
+	const [guestFormErrors, setGuestFormErrors] = useState<{
+		name?: string;
+		phone?: string;
+	}>({});
 	const [isSavingGuest, setIsSavingGuest] = useState(false);
 
 	const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -150,6 +154,7 @@ export const AdminDashboard: React.FC = () => {
 		setIsAddModalOpen(false);
 		setEditingGuest(null);
 		setGuestForm({ name: "", phone: "" });
+		setGuestFormErrors({});
 	};
 
 	const fetchGuests = async () => {
@@ -219,22 +224,60 @@ export const AdminDashboard: React.FC = () => {
 
 		const formattedName = capitalizeName(guestForm.name);
 		const rawPhone = guestForm.phone.trim();
+		const errors: { name?: string; phone?: string } = {};
 
-		if (!formattedName || !rawPhone) return;
+		if (!formattedName) {
+			errors.name = "Please enter the guest's full name.";
+		}
 
-		if (!isValidEgyptianPhone(rawPhone)) {
-			showToast(
-				"error",
-				"Invalid Egyptian Phone",
-				"Please enter a valid Egyptian mobile number starting with 010, 011, 012, or 015 (e.g. 01012345678 or +201xxxxxxxxx).",
+		if (!rawPhone) {
+			errors.phone = "Please enter a mobile phone number.";
+		} else if (!isValidEgyptianPhone(rawPhone)) {
+			errors.phone =
+				"Please enter a valid Egyptian mobile number starting with 010, 011, 012, or 015 (e.g. 01012345678 or +201xxxxxxxxx).";
+		} else {
+			const normalizedCheck = normalizeEgyptianPhone(rawPhone);
+			const isDuplicate = guests.some(
+				(g) =>
+					g.id !== editingGuest?.id &&
+					(g.phone_normalized || normalizeEgyptianPhone(g.phone)) ===
+						normalizedCheck,
 			);
+			if (isDuplicate) {
+				errors.phone =
+					"This phone number is already registered in the guest list.";
+			}
+		}
+
+		if (errors.name || errors.phone) {
+			setGuestFormErrors(errors);
 			return;
 		}
 
+		setGuestFormErrors({});
 		const normalized = normalizeEgyptianPhone(rawPhone);
 		setIsSavingGuest(true);
 
 		try {
+			// Verify uniqueness in the database as well
+			let duplicateQuery = supabase
+				.from("guests")
+				.select("id")
+				.eq("phone_normalized", normalized)
+				.limit(1);
+
+			if (editingGuest) {
+				duplicateQuery = duplicateQuery.neq("id", editingGuest.id);
+			}
+
+			const { data: existingDup } = await duplicateQuery;
+			if (existingDup && existingDup.length > 0) {
+				setGuestFormErrors({
+					phone: "This phone number is already registered in the guest list.",
+				});
+				return;
+			}
+
 			if (editingGuest) {
 				// Update
 				const { error } = await supabase
@@ -248,15 +291,27 @@ export const AdminDashboard: React.FC = () => {
 					.eq("id", editingGuest.id);
 
 				if (error) {
-					showToast(
-						"error",
-						"Update Failed",
-						`Failed to update guest: ${error.message}`,
-					);
+					if (
+						error.code === "23505" ||
+						error.message.toLowerCase().includes("duplicate") ||
+						error.message.toLowerCase().includes("unique")
+					) {
+						setGuestFormErrors({
+							phone:
+								"This phone number is already registered in the guest list.",
+						});
+					} else {
+						showToast(
+							"error",
+							"Update Failed",
+							`Failed to update guest: ${error.message}`,
+						);
+					}
 				} else {
 					setIsAddModalOpen(false);
 					setEditingGuest(null);
 					setGuestForm({ name: "", phone: "" });
+					setGuestFormErrors({});
 					await fetchGuests();
 					showToast(
 						"success",
@@ -280,14 +335,26 @@ export const AdminDashboard: React.FC = () => {
 				]);
 
 				if (error) {
-					showToast(
-						"error",
-						"Failed to Add Guest",
-						`Could not add guest: ${error.message}`,
-					);
+					if (
+						error.code === "23505" ||
+						error.message.toLowerCase().includes("duplicate") ||
+						error.message.toLowerCase().includes("unique")
+					) {
+						setGuestFormErrors({
+							phone:
+								"This phone number is already registered in the guest list.",
+						});
+					} else {
+						showToast(
+							"error",
+							"Failed to Add Guest",
+							`Could not add guest: ${error.message}`,
+						);
+					}
 				} else {
 					setIsAddModalOpen(false);
 					setGuestForm({ name: "", phone: "" });
+					setGuestFormErrors({});
 					await fetchGuests();
 					showToast(
 						"success",
@@ -609,6 +676,13 @@ export const AdminDashboard: React.FC = () => {
 				return;
 			}
 
+			// Track existing normalized phone numbers to prevent duplicates in guest list
+			const seenNormalizedPhones = new Set(
+				guests.map(
+					(g) => g.phone_normalized || normalizeEgyptianPhone(g.phone),
+				),
+			);
+
 			// Map rows: find name and phone columns case-insensitively
 			const newGuestsToInsert: Array<{
 				name: string;
@@ -618,6 +692,7 @@ export const AdminDashboard: React.FC = () => {
 				qr_token: string;
 			}> = [];
 			let skippedInvalidPhoneCount = 0;
+			let skippedDuplicatePhoneCount = 0;
 
 			for (const row of jsonData) {
 				let name = "";
@@ -657,10 +732,16 @@ export const AdminDashboard: React.FC = () => {
 						skippedInvalidPhoneCount++;
 						continue;
 					}
+					const normalized = normalizeEgyptianPhone(phone);
+					if (seenNormalizedPhones.has(normalized)) {
+						skippedDuplicatePhoneCount++;
+						continue;
+					}
+					seenNormalizedPhones.add(normalized);
 					newGuestsToInsert.push({
 						name: capitalizeName(name),
 						phone,
-						phone_normalized: normalizeEgyptianPhone(phone),
+						phone_normalized: normalized,
 						invite_token: generateToken(20),
 						qr_token: generateToken(24),
 					});
@@ -668,14 +749,26 @@ export const AdminDashboard: React.FC = () => {
 			}
 
 			if (newGuestsToInsert.length === 0) {
+				const reasons: string[] = [];
+				if (skippedDuplicatePhoneCount > 0) {
+					reasons.push(
+						`${skippedDuplicatePhoneCount} duplicate phone number(s)`,
+					);
+				}
+				if (skippedInvalidPhoneCount > 0) {
+					reasons.push(
+						`${skippedInvalidPhoneCount} invalid Egyptian phone number(s)`,
+					);
+				}
 				showToast(
 					"error",
 					"No Valid Guests Found",
-					skippedInvalidPhoneCount > 0
-						? `No valid rows could be imported. ${skippedInvalidPhoneCount} row(s) had invalid Egyptian phone numbers.`
+					reasons.length > 0
+						? `No rows could be imported (${reasons.join(", ")} skipped).`
 						: "Could not find valid guest rows with Name and Egyptian Phone in the file.",
 				);
 				setImportLoading(false);
+				if (fileInputRef.current) fileInputRef.current.value = "";
 				return;
 			}
 
@@ -697,10 +790,19 @@ export const AdminDashboard: React.FC = () => {
 				insertedCount += chunk.length;
 			}
 
+			const skippedParts: string[] = [];
+			if (skippedDuplicatePhoneCount > 0) {
+				skippedParts.push(
+					`${skippedDuplicatePhoneCount} duplicate phone number(s)`,
+				);
+			}
+			if (skippedInvalidPhoneCount > 0) {
+				skippedParts.push(
+					`${skippedInvalidPhoneCount} invalid Egyptian phone number(s)`,
+				);
+			}
 			const skippedMsg =
-				skippedInvalidPhoneCount > 0
-					? ` (${skippedInvalidPhoneCount} skipped due to invalid Egyptian phone number)`
-					: "";
+				skippedParts.length > 0 ? ` (${skippedParts.join(", ")} skipped)` : "";
 			const summaryMsg = `Successfully imported ${insertedCount} guests!${skippedMsg}`;
 			setImportSummary(summaryMsg);
 			if (insertedCount > 0) {
@@ -862,6 +964,7 @@ export const AdminDashboard: React.FC = () => {
 							onClick={() => {
 								setEditingGuest(null);
 								setGuestForm({ name: "", phone: "" });
+								setGuestFormErrors({});
 								setIsAddModalOpen(true);
 							}}
 							className="bg-shop-cream hover:bg-shop-cream-light text-shop-navy font-bold text-xs py-2 px-3.5 rounded-xl transition flex items-center space-x-1.5 shadow"
@@ -1033,6 +1136,7 @@ export const AdminDashboard: React.FC = () => {
 																name: capitalizeName(guest.name),
 																phone: guest.phone,
 															});
+															setGuestFormErrors({});
 															setIsAddModalOpen(true);
 														}}
 														className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream/70 hover:text-shop-cream p-1.5 rounded-lg transition"
@@ -1084,7 +1188,7 @@ export const AdminDashboard: React.FC = () => {
 							{editingGuest ? "Edit Guest" : "Add New Guest"}
 						</h3>
 
-						<form onSubmit={handleSaveGuest} className="space-y-4">
+						<form onSubmit={handleSaveGuest} noValidate className="space-y-4">
 							<div>
 								<label className="block text-xs font-semibold uppercase tracking-wider text-shop-cream/70 mb-1">
 									Full Name
@@ -1092,18 +1196,35 @@ export const AdminDashboard: React.FC = () => {
 								<input
 									type="text"
 									value={guestForm.name}
-									onChange={(e) =>
-										setGuestForm({ ...guestForm, name: e.target.value })
-									}
+									onChange={(e) => {
+										setGuestForm({ ...guestForm, name: e.target.value });
+										if (guestFormErrors.name) {
+											setGuestFormErrors((prev) => ({
+												...prev,
+												name: undefined,
+											}));
+										}
+									}}
 									placeholder="e.g. Youssef Mansour"
-									required
 									autoFocus
 									disabled={isSavingGuest}
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none focus:border-shop-gold disabled:opacity-50"
+									aria-invalid={Boolean(guestFormErrors.name)}
+									className={`w-full bg-shop-navy/80 border rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none transition disabled:opacity-50 ${
+										guestFormErrors.name
+											? "border-red-500 focus:border-red-500"
+											: "border-shop-cream/20 focus:border-shop-gold"
+									}`}
 								/>
-								<p className="text-[11px] text-shop-cream/50 mt-1">
-									Initials will be automatically capitalized.
-								</p>
+								{guestFormErrors.name ? (
+									<p className="text-xs text-red-400 mt-1.5 flex items-start space-x-1.5">
+										<AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+										<span>{guestFormErrors.name}</span>
+									</p>
+								) : (
+									<p className="text-[11px] text-shop-cream/50 mt-1">
+										Initials will be automatically capitalized.
+									</p>
+								)}
 							</div>
 
 							<div>
@@ -1113,18 +1234,35 @@ export const AdminDashboard: React.FC = () => {
 								<input
 									type="tel"
 									value={guestForm.phone}
-									onChange={(e) =>
-										setGuestForm({ ...guestForm, phone: e.target.value })
-									}
+									onChange={(e) => {
+										setGuestForm({ ...guestForm, phone: e.target.value });
+										if (guestFormErrors.phone) {
+											setGuestFormErrors((prev) => ({
+												...prev,
+												phone: undefined,
+											}));
+										}
+									}}
 									placeholder="010xxxxxxxx or +201xxxxxxxx"
-									required
 									disabled={isSavingGuest}
-									className="w-full bg-shop-navy/80 border border-shop-cream/20 rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none focus:border-shop-gold disabled:opacity-50"
+									aria-invalid={Boolean(guestFormErrors.phone)}
+									className={`w-full bg-shop-navy/80 border rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none transition disabled:opacity-50 ${
+										guestFormErrors.phone
+											? "border-red-500 focus:border-red-500"
+											: "border-shop-cream/20 focus:border-shop-gold"
+									}`}
 								/>
-								<p className="text-[11px] text-shop-cream/50 mt-1">
-									Valid Egyptian formats: 010..., 011..., 012..., 015...,
-									+201...
-								</p>
+								{guestFormErrors.phone ? (
+									<p className="text-xs text-red-400 mt-1.5 flex items-start space-x-1.5">
+										<AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+										<span>{guestFormErrors.phone}</span>
+									</p>
+								) : (
+									<p className="text-[11px] text-shop-cream/50 mt-1">
+										Valid Egyptian formats: 010..., 011..., 012..., 015...,
+										+201...
+									</p>
+								)}
 							</div>
 
 							<div className="flex justify-end space-x-2 pt-2">
