@@ -31,6 +31,7 @@ import {
 	ArrowUpDown,
 	ArrowUp,
 	ArrowDown,
+	Ban,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -41,6 +42,7 @@ import {
 	formatPhoneDisplay,
 	generateToken,
 } from "../lib/phone";
+import { getUserFriendlyError } from "../lib/error";
 import type { Guest } from "../types";
 
 interface ConfirmModalDetail {
@@ -116,8 +118,15 @@ export const AdminDashboard: React.FC = () => {
 
 	const showToast = useCallback(
 		(type: ToastMessage["type"], title: string, message: string) => {
+			const safeMessage =
+				type === "error"
+					? getUserFriendlyError(
+							message,
+							"Something went wrong. Please try again.",
+						)
+					: message;
 			const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-			setToasts((prev) => [...prev, { id, type, title, message }]);
+			setToasts((prev) => [...prev, { id, type, title, message: safeMessage }]);
 			setTimeout(() => {
 				dismissToast(id);
 			}, 4000);
@@ -322,10 +331,11 @@ export const AdminDashboard: React.FC = () => {
 								"This phone number is already registered in the guest list.",
 						});
 					} else {
+						console.error("Failed to update guest:", error);
 						showToast(
 							"error",
 							"Update Failed",
-							`Failed to update guest: ${error.message}`,
+							"Unable to update guest details right now. Please try again.",
 						);
 					}
 				} else {
@@ -366,10 +376,11 @@ export const AdminDashboard: React.FC = () => {
 								"This phone number is already registered in the guest list.",
 						});
 					} else {
+						console.error("Failed to add guest:", error);
 						showToast(
 							"error",
 							"Failed to Add Guest",
-							`Could not add guest: ${error.message}`,
+							"Unable to add this guest right now. Please try again.",
 						);
 					}
 				} else {
@@ -384,6 +395,13 @@ export const AdminDashboard: React.FC = () => {
 					);
 				}
 			}
+		} catch (err) {
+			console.error("Error saving guest:", err);
+			showToast(
+				"error",
+				editingGuest ? "Update Failed" : "Failed to Add Guest",
+				"An unexpected error occurred while saving the guest. Please try again.",
+			);
 		} finally {
 			setIsSavingGuest(false);
 		}
@@ -405,10 +423,11 @@ export const AdminDashboard: React.FC = () => {
 					setConfirmModal(null);
 
 					if (error) {
+						console.error("Failed to delete guest:", error);
 						showToast(
 							"error",
 							"Delete Failed",
-							`Failed to delete guest: ${error.message}`,
+							"Unable to remove this guest right now. Please try again.",
 						);
 					} else {
 						await fetchGuests();
@@ -484,10 +503,11 @@ export const AdminDashboard: React.FC = () => {
 					setConfirmModal(null);
 
 					if (error) {
+						console.error("Failed to delete all guests:", error);
 						showToast(
 							"error",
 							"Delete All Failed",
-							`Failed to delete all guest records: ${error.message}`,
+							"Unable to delete guest records right now. Please try again.",
 						);
 					} else {
 						setGuests([]);
@@ -524,10 +544,14 @@ export const AdminDashboard: React.FC = () => {
 					setConfirmModal(null);
 
 					if (error || !data?.success) {
+						if (error) console.error("Manual check-in error:", error);
 						showToast(
 							"error",
 							"Check-In Failed",
-							error?.message || data?.error || "Manual check-in failed.",
+							getUserFriendlyError(
+								data?.error,
+								"Unable to check in this guest right now. Please try again.",
+							),
 						);
 					} else {
 						await fetchGuests();
@@ -580,10 +604,11 @@ export const AdminDashboard: React.FC = () => {
 					setConfirmModal(null);
 
 					if (checkoutError) {
+						console.error("Failed to reissue QR code:", checkoutError);
 						showToast(
 							"error",
 							"Reissue Failed",
-							checkoutError.message || "Failed to reissue QR code.",
+							"Unable to reissue the QR code right now. Please try again.",
 						);
 						await fetchGuests();
 						return;
@@ -596,6 +621,59 @@ export const AdminDashboard: React.FC = () => {
 						wasCheckedIn
 							? `New QR code issued for ${displayName}, and status reset to Pending so they can be scanned again.`
 							: `A new QR code has been issued for ${displayName}.`,
+					);
+				},
+			},
+		);
+	};
+
+	const handleRevokeQr = (guest: Guest) => {
+		if (guest.is_revoked) return;
+		const displayName = capitalizeName(guest.name);
+
+		openConfirmModal(
+			"danger",
+			"Revoke QR Code",
+			guest.checked_in
+				? `Are you sure you want to revoke the QR code for ${displayName}? Their pass will immediately be invalidated and their check-in status will be reset.`
+				: `Are you sure you want to revoke the QR code for ${displayName}? Their digital pass will immediately be invalidated and will be declined at the entrance.`,
+			{
+				confirmText: "Revoke QR Code",
+				loadingText: "Revoking...",
+				cancelText: "Cancel",
+				onConfirm: async () => {
+					if (guest.checked_in) {
+						await supabase.from("check_ins").delete().eq("guest_id", guest.id);
+					}
+
+					const { error: revokeError } = await supabase
+						.from("guests")
+						.update({
+							is_revoked: true,
+							checked_in: false,
+							checked_in_at: null,
+							updated_at: new Date().toISOString(),
+						})
+						.eq("id", guest.id);
+
+					setConfirmModal(null);
+
+					if (revokeError) {
+						console.error("Failed to revoke QR code:", revokeError);
+						showToast(
+							"error",
+							"Revoke Failed",
+							"Unable to revoke the QR code right now. Please try again.",
+						);
+						await fetchGuests();
+						return;
+					}
+
+					await fetchGuests();
+					showToast(
+						"success",
+						"QR Code Revoked",
+						`The QR code for ${displayName} has been revoked and can no longer be used.`,
 					);
 				},
 			},
@@ -804,7 +882,7 @@ export const AdminDashboard: React.FC = () => {
 					showToast(
 						"error",
 						"Import Error",
-						`Error during import: ${error.message}`,
+						"Unable to import the guest list right now. Please try again.",
 					);
 					break;
 				}
@@ -832,11 +910,11 @@ export const AdminDashboard: React.FC = () => {
 			fetchGuests();
 			if (fileInputRef.current) fileInputRef.current.value = "";
 		} catch (err: unknown) {
+			console.error("File parse error:", err);
 			showToast(
 				"error",
 				"File Parse Error",
-				"Failed to parse file: " +
-					(err instanceof Error ? err.message : String(err)),
+				"Unable to read the uploaded file. Please ensure it is a valid CSV or Excel (.xlsx) file.",
 			);
 		} finally {
 			setImportLoading(false);
@@ -1067,7 +1145,7 @@ export const AdminDashboard: React.FC = () => {
 									<th className="py-3.5 px-4 min-w-[210px] whitespace-nowrap">
 										Invitation Link
 									</th>
-									<th className="py-3.5 px-4 min-w-[160px] text-right whitespace-nowrap">
+									<th className="py-3.5 px-4 min-w-[180px] text-right whitespace-nowrap">
 										Actions
 									</th>
 								</tr>
@@ -1172,7 +1250,7 @@ export const AdminDashboard: React.FC = () => {
 											</td>
 											<td className="py-3.5 px-4 text-right whitespace-nowrap">
 												<div className="inline-flex items-center justify-end space-x-1.5 whitespace-nowrap">
-													{!guest.checked_in && (
+													{!guest.checked_in && !guest.is_revoked && (
 														<button
 															onClick={() => handleManualCheckIn(guest)}
 															className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 p-1.5 rounded-lg transition shrink-0"
@@ -1188,6 +1266,19 @@ export const AdminDashboard: React.FC = () => {
 														title="Reissue QR Code"
 													>
 														<QrCode className="w-3.5 h-3.5" />
+													</button>
+
+													<button
+														onClick={() => handleRevokeQr(guest)}
+														disabled={guest.is_revoked}
+														className="bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 p-1.5 rounded-lg transition shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+														title={
+															guest.is_revoked
+																? "QR Code Already Revoked"
+																: "Revoke QR Code"
+														}
+													>
+														<Ban className="w-3.5 h-3.5" />
 													</button>
 
 													<button
@@ -1230,11 +1321,11 @@ export const AdminDashboard: React.FC = () => {
 			{isAddModalOpen && (
 				<div
 					onClick={handleCloseGuestModal}
-					className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+					className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
 				>
 					<div
 						onClick={(e) => e.stopPropagation()}
-						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
+						className="bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
 					>
 						<button
 							type="button"
@@ -1270,7 +1361,7 @@ export const AdminDashboard: React.FC = () => {
 									autoFocus
 									disabled={isSavingGuest}
 									aria-invalid={Boolean(guestFormErrors.name)}
-									className={`w-full bg-shop-navy/80 border rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none transition disabled:opacity-50 ${
+									className={`w-full bg-shop-navy border rounded-xl px-4 py-2.5 text-sm text-shop-cream focus:outline-none transition disabled:opacity-50 ${
 										guestFormErrors.name
 											? "border-red-500 focus:border-red-500"
 											: "border-shop-cream/20 focus:border-shop-gold"
@@ -1307,7 +1398,7 @@ export const AdminDashboard: React.FC = () => {
 									placeholder="010xxxxxxxx or +201xxxxxxxx"
 									disabled={isSavingGuest}
 									aria-invalid={Boolean(guestFormErrors.phone)}
-									className={`w-full bg-shop-navy/80 border rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none transition disabled:opacity-50 ${
+									className={`w-full bg-shop-navy border rounded-xl px-4 py-2.5 text-sm font-mono text-shop-cream focus:outline-none transition disabled:opacity-50 ${
 										guestFormErrors.phone
 											? "border-red-500 focus:border-red-500"
 											: "border-shop-cream/20 focus:border-shop-gold"
@@ -1367,11 +1458,11 @@ export const AdminDashboard: React.FC = () => {
 						setIsImportModalOpen(false);
 						setImportSummary(null);
 					}}
-					className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+					className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
 				>
 					<div
 						onClick={(e) => e.stopPropagation()}
-						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative"
+						className="bg-shop-dark border border-shop-cream/20 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative"
 					>
 						<button
 							onClick={() => {
@@ -1392,7 +1483,7 @@ export const AdminDashboard: React.FC = () => {
 							Egyptian mobile numbers.
 						</p>
 
-						<div className="border-2 border-dashed border-shop-cream/25 rounded-2xl p-6 text-center bg-shop-navy/30">
+						<div className="border-2 border-dashed border-shop-cream/25 rounded-2xl p-6 text-center bg-shop-navy">
 							<Upload className="w-8 h-8 text-shop-gold mx-auto mb-2" />
 							<p className="text-xs text-shop-cream/80 mb-3">
 								Expected columns: <strong>Name</strong> and{" "}
@@ -1409,7 +1500,7 @@ export const AdminDashboard: React.FC = () => {
 						</div>
 
 						{importLoading && (
-							<div className="mt-4 p-3 bg-shop-navy/80 rounded-xl text-center text-xs text-shop-cream flex items-center justify-center space-x-2">
+							<div className="mt-4 p-3 bg-shop-navy rounded-xl text-center text-xs text-shop-cream flex items-center justify-center space-x-2">
 								<div className="w-4 h-4 border-2 border-shop-cream/30 border-t-shop-cream rounded-full animate-spin" />
 								<span>
 									Processing file and generating secure invitation tokens...
@@ -1448,7 +1539,7 @@ export const AdminDashboard: React.FC = () => {
 				>
 					<div
 						onClick={(e) => e.stopPropagation()}
-						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
+						className="bg-shop-dark border border-shop-cream/20 max-w-md w-full rounded-2xl p-6 shadow-2xl relative"
 					>
 						<button
 							type="button"
@@ -1469,7 +1560,11 @@ export const AdminDashboard: React.FC = () => {
 								}`}
 							>
 								{confirmModal.type === "danger" ? (
-									<Trash2 className="w-5 h-5 text-red-400" />
+									confirmModal.title.toLowerCase().includes("revoke") ? (
+										<Ban className="w-5 h-5 text-red-400" />
+									) : (
+										<Trash2 className="w-5 h-5 text-red-400" />
+									)
 								) : (
 									<AlertTriangle className="w-5 h-5 text-shop-gold" />
 								)}
@@ -1487,7 +1582,7 @@ export const AdminDashboard: React.FC = () => {
 
 						{/* Optional Breakdown Details (e.g. Delete All Guests Summary) */}
 						{confirmModal.details && confirmModal.details.length > 0 && (
-							<div className="mt-4 bg-shop-navy/60 border border-shop-cream/15 rounded-xl p-3.5 space-y-2 text-xs">
+							<div className="mt-4 bg-shop-navy border border-shop-cream/15 rounded-xl p-3.5 space-y-2 text-xs">
 								{confirmModal.details.map((item, idx) => (
 									<div
 										key={idx}
@@ -1509,7 +1604,7 @@ export const AdminDashboard: React.FC = () => {
 						{/* Optional Preview of Guests Affected */}
 						{confirmModal.guestPreviewList &&
 							confirmModal.guestPreviewList.length > 0 && (
-								<div className="mt-3 bg-shop-navy/40 border border-shop-cream/10 rounded-xl p-3">
+								<div className="mt-3 bg-shop-navy border border-shop-cream/10 rounded-xl p-3">
 									<span className="block text-[10px] uppercase tracking-wider text-shop-cream/50 font-semibold mb-1.5">
 										Records to be deleted
 									</span>
@@ -1568,7 +1663,7 @@ export const AdminDashboard: React.FC = () => {
 				{toasts.map((toast) => (
 					<div
 						key={toast.id}
-						className={`pointer-events-auto glass-panel bg-shop-dark/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border flex items-start space-x-3 animate-toastIn ${
+						className={`pointer-events-auto bg-shop-dark rounded-2xl p-4 shadow-2xl border flex items-start space-x-3 animate-toastIn ${
 							toast.type === "success"
 								? "border-emerald-500/40 shadow-emerald-950/40"
 								: "border-red-500/40 shadow-red-950/40"

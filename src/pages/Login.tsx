@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Lock, Mail, ArrowRight, ShieldAlert, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { getFriendlyAuthError } from "../lib/error";
 
 export const Login: React.FC = () => {
 	const [email, setEmail] = useState("");
@@ -13,9 +14,26 @@ export const Login: React.FC = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
-	const { signIn } = useAuth();
+	const { user, role, loading: authLoading, signIn, signOut } = useAuth();
 	const navigate = useNavigate();
 	const location = useLocation();
+
+	if (authLoading) {
+		return (
+			<div className="min-h-screen bg-shop-dark flex flex-col items-center justify-center p-4">
+				<div className="w-12 h-12 border-4 border-shop-cream/20 border-t-shop-cream rounded-full animate-spin mb-4" />
+				<p className="text-shop-cream/80 text-sm tracking-widest uppercase font-mono">
+					Authenticating...
+				</p>
+			</div>
+		);
+	}
+
+	if (user && role) {
+		return (
+			<Navigate to={role === "scanner" ? "/scanner" : "/admin"} replace />
+		);
+	}
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -43,10 +61,20 @@ export const Login: React.FC = () => {
 		setLoading(true);
 
 		try {
-			const { error: authError, role } = await signIn(trimmedEmail, password);
+			const { error: authError, role: signedInRole } = await signIn(
+				trimmedEmail,
+				password,
+			);
 
 			if (authError) {
-				setError(authError.message || "Invalid email or password.");
+				setError(getFriendlyAuthError(authError));
+				setLoading(false);
+				return;
+			}
+
+			if (!signedInRole) {
+				await signOut();
+				setError("Your account is not authorized to access this portal.");
 				setLoading(false);
 				return;
 			}
@@ -55,20 +83,15 @@ export const Login: React.FC = () => {
 			const from = (location.state as { from?: { pathname: string } })?.from
 				?.pathname;
 
-			if (role === "admin") {
-				navigate(from || "/admin", { replace: true });
-			} else if (role === "scanner") {
+			if (signedInRole === "admin") {
+				navigate(from && from !== "/login" ? from : "/admin", {
+					replace: true,
+				});
+			} else if (signedInRole === "scanner") {
 				navigate("/scanner", { replace: true });
-			} else {
-				// Fallback
-				navigate("/admin", { replace: true });
 			}
-		} catch (err: unknown) {
-			setError(
-				err instanceof Error
-					? err.message
-					: "An error occurred during authentication.",
-			);
+		} catch {
+			setError("An error occurred during sign in. Please try again.");
 		} finally {
 			setLoading(false);
 		}

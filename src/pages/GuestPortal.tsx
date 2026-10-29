@@ -22,6 +22,7 @@ import {
 	isValidEgyptianPhone,
 	isValidInviteTokenFormat,
 } from "../lib/phone";
+import { getUserFriendlyError } from "../lib/error";
 import type { VerifyGuestResponse } from "../types";
 
 type TokenStatus = "checking" | "valid" | "invalid" | "missing";
@@ -122,8 +123,10 @@ export const GuestPortal: React.FC = () => {
 				} else {
 					setTokenStatus("invalid");
 					setTokenErrorReason(
-						res?.error ||
+						getUserFriendlyError(
+							res?.error,
 							"This invitation link is not recognized or is no longer valid.",
+						),
 					);
 				}
 			} catch {
@@ -174,7 +177,7 @@ export const GuestPortal: React.FC = () => {
 
 			if (rpcError) {
 				setError(
-					rpcError.message || "Verification service temporarily unavailable.",
+					"Unable to verify your invitation right now. Please try again shortly.",
 				);
 				setLoading(false);
 				return;
@@ -190,14 +193,21 @@ export const GuestPortal: React.FC = () => {
 
 				if (res?.error && !isPhoneMismatchError) {
 					setTokenStatus("invalid");
-					setTokenErrorReason(res.error);
+					setTokenErrorReason(
+						getUserFriendlyError(
+							res.error,
+							"This invitation link is not recognized or is no longer valid.",
+						),
+					);
 					setLoading(false);
 					return;
 				}
 
 				setError(
-					res?.error ||
+					getUserFriendlyError(
+						res?.error,
 						"Verification failed. Please check the mobile number entered.",
+					),
 				);
 				setLoading(false);
 				return;
@@ -215,12 +225,8 @@ export const GuestPortal: React.FC = () => {
 			} catch (e) {
 				// Confetti is a visual extra
 			}
-		} catch (err: unknown) {
-			setError(
-				err instanceof Error
-					? err.message
-					: "An unexpected error occurred. Please try again.",
-			);
+		} catch {
+			setError("An unexpected error occurred. Please try again.");
 		} finally {
 			setLoading(false);
 		}
@@ -809,7 +815,7 @@ export const GuestPortal: React.FC = () => {
 							BAZARNA®
 						</span>
 						<span className="block text-[11px] tracking-widest uppercase text-shop-cream/70 font-medium">
-							The Shop Private Opening
+							The Shop Opening
 						</span>
 					</div>
 				</div>
@@ -853,7 +859,7 @@ export const GuestPortal: React.FC = () => {
 							</h1>
 							<p className="text-shop-cream/75 text-sm max-w-md mx-auto leading-relaxed mb-6">
 								{tokenStatus === "missing"
-									? "Access to The Shop Private Opening is strictly by personal invitation. Please open the unique invitation link sent to your mobile number."
+									? "Access to The Shop Opening is strictly by personal invitation. Please open the unique invitation link sent to your mobile number."
 									: tokenErrorReason ||
 										"This invitation link is not recognized or is no longer active. Please check the exact link sent to your mobile number."}
 							</p>
@@ -1070,7 +1076,7 @@ export const GuestPortal: React.FC = () => {
 				>
 					<div
 						onClick={(e) => e.stopPropagation()}
-						className="glass-panel bg-shop-dark border border-shop-cream/20 max-w-sm w-full rounded-2xl p-4 shadow-2xl relative text-center"
+						className="bg-shop-dark border border-shop-cream/20 max-w-sm w-full rounded-2xl p-4 shadow-2xl relative text-center"
 					>
 						<button
 							type="button"
@@ -1090,7 +1096,7 @@ export const GuestPortal: React.FC = () => {
 							<strong className="text-shop-gold">Add to Photos</strong>).
 						</p>
 
-						<div className="rounded-xl overflow-hidden border border-shop-cream/20 shadow-lg bg-shop-navy/50 max-h-[65vh] flex items-center justify-center">
+						<div className="rounded-xl overflow-hidden border border-shop-cream/20 shadow-lg bg-shop-navy max-h-[65vh] flex items-center justify-center">
 							<img
 								src={passImageUrl}
 								alt="The Shop Digital Entry Pass"

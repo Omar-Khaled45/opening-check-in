@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { getUserFriendlyError } from "../lib/error";
 import type { ScanGuestResponse } from "../types";
 
 export const Scanner: React.FC = () => {
@@ -134,9 +135,7 @@ export const Scanner: React.FC = () => {
 			} catch (err: unknown) {
 				console.error("Camera start error:", err);
 				setCameraError(
-					err instanceof Error
-						? err.message
-						: "Camera access denied. Please grant camera permission in your browser.",
+					"Camera access was denied or is unavailable. Please grant camera permissions in your browser settings and try again.",
 				);
 			}
 		};
@@ -169,15 +168,25 @@ export const Scanner: React.FC = () => {
 			});
 
 			if (error) {
+				console.error("Scan RPC error:", error);
 				const errorResult: ScanGuestResponse = {
 					status: "INVALID",
-					message: error.message || "Verification service error.",
+					message: "Unable to verify this pass right now. Please try scanning again.",
 				};
 				setScanResult(errorResult);
 				playAudioTone("error");
 			} else {
 				const res = data as ScanGuestResponse;
-				setScanResult(res);
+				setScanResult({
+					...res,
+					message:
+						res.status === "INVALID"
+							? getUserFriendlyError(
+									res.message,
+									"The presented QR code is not recognized or has been revoked.",
+								)
+							: res.message,
+				});
 
 				if (res.status === "SUCCESS") {
 					playAudioTone("success");
@@ -188,9 +197,10 @@ export const Scanner: React.FC = () => {
 				}
 			}
 		} catch (err) {
+			console.error("Scan error:", err);
 			setScanResult({
 				status: "INVALID",
-				message: "Network connection or scan verification failed.",
+				message: "Unable to verify this pass right now. Please check your connection and try again.",
 			});
 			playAudioTone("error");
 		} finally {
@@ -427,8 +437,10 @@ export const Scanner: React.FC = () => {
 							)}
 							{scanResult.status === "INVALID" && (
 								<>
-									{scanResult.message ||
-										"The presented QR code is not recognized or has been revoked."}
+									{getUserFriendlyError(
+										scanResult.message,
+										"The presented QR code is not recognized or has been revoked.",
+									)}
 								</>
 							)}
 						</p>

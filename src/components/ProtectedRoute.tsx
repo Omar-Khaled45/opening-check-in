@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import type { UserRole } from "../types";
@@ -12,8 +12,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 	children,
 	allowedRoles,
 }) => {
-	const { user, role, loading } = useAuth();
+	const { user, role, loading, signOut } = useAuth();
 	const location = useLocation();
+
+	useEffect(() => {
+		if (!loading && user && !role) {
+			signOut();
+		}
+	}, [loading, user, role, signOut]);
 
 	if (loading) {
 		return (
@@ -26,11 +32,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 		);
 	}
 
-	if (!user) {
+	if (!user || !role) {
 		return <Navigate to="/login" state={{ from: location }} replace />;
 	}
 
-	if (allowedRoles && role && !allowedRoles.includes(role)) {
+	if (allowedRoles && !allowedRoles.includes(role)) {
 		if (role === "scanner") {
 			return <Navigate to="/scanner" replace />;
 		}
