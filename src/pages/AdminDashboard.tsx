@@ -4,6 +4,7 @@ import React, {
 	useMemo,
 	useRef,
 	useCallback,
+	useDeferredValue,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -32,6 +33,8 @@ import {
 	ArrowUp,
 	ArrowDown,
 	Ban,
+	ChevronLeft,
+	ChevronRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -78,12 +81,15 @@ export const AdminDashboard: React.FC = () => {
 	const [guests, setGuests] = useState<Guest[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [searchQuery, setSearchQuery] = useState("");
+	const deferredSearchQuery = useDeferredValue(searchQuery);
 	const [statusFilter, setStatusFilter] = useState<
 		"all" | "checked_in" | "pending"
 	>("all");
 	const [nameSortOrder, setNameSortOrder] = useState<"asc" | "desc" | null>(
 		null,
 	);
+	const [currentPage, setCurrentPage] = useState(1);
+	const [pageSize, setPageSize] = useState(50);
 
 	// Modals state
 	const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -97,6 +103,10 @@ export const AdminDashboard: React.FC = () => {
 
 	const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 	const [importLoading, setImportLoading] = useState(false);
+	const [importProgress, setImportProgress] = useState<{
+		current: number;
+		total: number;
+	} | null>(null);
 	const [importSummary, setImportSummary] = useState<string | null>(null);
 
 	// Custom styled Confirmation modal state (only for pre-action confirmation prompts)
@@ -111,6 +121,13 @@ export const AdminDashboard: React.FC = () => {
 	// Copied invite feedback tracking
 	const [copiedToken, setCopiedToken] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const isBulkMutatingRef = useRef(false);
+	const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	);
+	const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+		null,
+	);
 
 	const dismissToast = useCallback((id: string) => {
 		setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -172,63 +189,139 @@ export const AdminDashboard: React.FC = () => {
 		setGuestFormErrors({});
 	};
 
-	const fetchGuests = async () => {
+	const fetchGuests = useCallback(async () => {
 		try {
-			const { data, error } = await supabase
-				.from("guests")
-				.select("*")
-				.order("created_at", { ascending: false });
+			const batchSize = 1000;
+			const allGuests: Guest[] = [];
+			let from = 0;
 
-			if (error) {
-				console.error("Failed to fetch guests:", error);
-			} else {
-				setGuests(data || []);
+			while (true) {
+				const { data, error } = await supabase
+					.from("guests")
+					.select("*")
+					.order("created_at", { ascending: false })
+					.order("id", { ascending: false })
+					.range(from, from + batchSize - 1);
+
+				if (error) {
+					console.error("Failed to fetch guests:", error);
+					return;
+				}
+
+				if (!data || data.length === 0) {
+					break;
+				}
+
+				allGuests.push(...(data as Guest[]));
+
+				if (data.length < batchSize) {
+					break;
+				}
+				from += batchSize;
 			}
+
+			setGuests(allGuests);
 		} catch (err) {
 			console.error("Error fetching guests:", err);
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, []);
 
-	useEffect(() => {
-		fetchGuests();
+	const subscribeRealtime = useCallback(() => {
+		if (realtimeChannelRef.current) {
+			supabase.removeChannel(realtimeChannelRef.current);
+			realtimeChannelRef.current = null;
+		}
 
 		const channel = supabase
 			.channel("admin_guests_realtime")
 			.on(
 				"postgres_changes",
 				{ event: "*", schema: "public", table: "guests" },
-				() => {
-					fetchGuests();
+				(payload) => {
+					if (isBulkMutatingRef.current) return;
+
+					if (
+						payload.eventType === "UPDATE" &&
+						payload.new &&
+						typeof (payload.new as Partial<Guest>).id === "string"
+					) {
+						const updatedGuest = payload.new as Guest;
+						setGuests((prev) =>
+							prev.map((g) => (g.id === updatedGuest.id ? updatedGuest : g)),
+						);
+						return;
+					}
+
+					if (realtimeDebounceRef.current) {
+						clearTimeout(realtimeDebounceRef.current);
+					}
+					realtimeDebounceRef.current = setTimeout(() => {
+						fetchGuests();
+					}, 300);
 				},
 			)
 			.subscribe();
 
-		return () => {
-			supabase.removeChannel(channel);
-		};
+		realtimeChannelRef.current = channel;
+	}, [fetchGuests]);
+
+	const pauseRealtime = useCallback(() => {
+		isBulkMutatingRef.current = true;
+		if (realtimeDebounceRef.current) {
+			clearTimeout(realtimeDebounceRef.current);
+			realtimeDebounceRef.current = null;
+		}
+		if (realtimeChannelRef.current) {
+			supabase.removeChannel(realtimeChannelRef.current);
+			realtimeChannelRef.current = null;
+		}
 	}, []);
 
+	const resumeRealtime = useCallback(() => {
+		isBulkMutatingRef.current = false;
+		subscribeRealtime();
+	}, [subscribeRealtime]);
+
+	useEffect(() => {
+		fetchGuests();
+		subscribeRealtime();
+
+		return () => {
+			if (realtimeDebounceRef.current) {
+				clearTimeout(realtimeDebounceRef.current);
+			}
+			if (realtimeChannelRef.current) {
+				supabase.removeChannel(realtimeChannelRef.current);
+				realtimeChannelRef.current = null;
+			}
+		};
+	}, [fetchGuests, subscribeRealtime]);
+
 	const totalGuests = guests.length;
-	const checkedInCount = guests.filter((g) => g.checked_in).length;
+	const checkedInCount = useMemo(
+		() => guests.reduce((acc, g) => acc + (g.checked_in ? 1 : 0), 0),
+		[guests],
+	);
 	const remainingCount = totalGuests - checkedInCount;
 	const checkInRate =
 		totalGuests > 0 ? Math.round((checkedInCount / totalGuests) * 100) : 0;
 
 	// Filtered and sorted guests
 	const filteredGuests = useMemo(() => {
+		const query = deferredSearchQuery.trim().toLowerCase();
 		const filtered = guests.filter((guest) => {
-			const matchesSearch =
-				guest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				guest.phone.includes(searchQuery) ||
-				guest.phone_normalized.includes(searchQuery);
+			if (statusFilter === "checked_in" && !guest.checked_in) return false;
+			if (statusFilter === "pending" && guest.checked_in) return false;
 
-			if (!matchesSearch) return false;
+			if (!query) return true;
 
-			if (statusFilter === "checked_in") return guest.checked_in;
-			if (statusFilter === "pending") return !guest.checked_in;
-			return true;
+			return (
+				guest.name.toLowerCase().includes(query) ||
+				guest.phone.includes(query) ||
+				guest.phone_normalized.includes(query)
+			);
 		});
 
 		if (!nameSortOrder) return filtered;
@@ -241,10 +334,19 @@ export const AdminDashboard: React.FC = () => {
 			);
 			return nameSortOrder === "asc" ? comparison : -comparison;
 		});
-	}, [guests, searchQuery, statusFilter, nameSortOrder]);
+	}, [guests, deferredSearchQuery, statusFilter, nameSortOrder]);
+
+	const totalPages = Math.max(1, Math.ceil(filteredGuests.length / pageSize));
+	const safeCurrentPage = Math.min(currentPage, totalPages);
+	const pageStartIndex = (safeCurrentPage - 1) * pageSize;
+	const paginatedGuests = useMemo(
+		() => filteredGuests.slice(pageStartIndex, pageStartIndex + pageSize),
+		[filteredGuests, pageStartIndex, pageSize],
+	);
 
 	const handleToggleNameSort = () => {
 		setNameSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+		setCurrentPage(1);
 	};
 
 	// Handle Add / Edit Guest
@@ -490,33 +592,70 @@ export const AdminDashboard: React.FC = () => {
 				loadingText: "Deleting All...",
 				cancelText: "Cancel",
 				onConfirm: async () => {
-					await supabase
-						.from("check_ins")
-						.delete()
-						.neq("id", "00000000-0000-0000-0000-000000000000");
+					pauseRealtime();
+					try {
+						// Only delete from check_ins if any guest was actually checked in
+						if (checkedInToDelete > 0) {
+							await supabase
+								.from("check_ins")
+								.delete()
+								.neq("id", "00000000-0000-0000-0000-000000000000");
+						}
 
-					const { error } = await supabase
-						.from("guests")
-						.delete()
-						.neq("id", "00000000-0000-0000-0000-000000000000");
+						const guestIds = guests.map((g) => g.id);
+						const deleteChunkSize = 150;
+						let deleteError: unknown = null;
 
-					setConfirmModal(null);
+						if (guestIds.length <= deleteChunkSize) {
+							const { error } = await supabase
+								.from("guests")
+								.delete()
+								.neq("id", "00000000-0000-0000-0000-000000000000");
+							deleteError = error;
+						} else {
+							const idChunks: string[][] = [];
+							for (let i = 0; i < guestIds.length; i += deleteChunkSize) {
+								idChunks.push(guestIds.slice(i, i + deleteChunkSize));
+							}
 
-					if (error) {
-						console.error("Failed to delete all guests:", error);
-						showToast(
-							"error",
-							"Delete All Failed",
-							"Unable to delete guest records right now. Please try again.",
-						);
-					} else {
-						setGuests([]);
-						await fetchGuests();
-						showToast(
-							"success",
-							"All Guests Deleted",
-							`Successfully deleted all ${countToDelete} guest record(s) from the system.`,
-						);
+							// Execute parallel batch deletes across multiple Postgres workers
+							const concurrency = 6;
+							for (let i = 0; i < idChunks.length; i += concurrency) {
+								const batch = idChunks.slice(i, i + concurrency);
+								const results = await Promise.all(
+									batch.map((chunkIds) =>
+										supabase.from("guests").delete().in("id", chunkIds),
+									),
+								);
+								const failed = results.find((r) => r.error);
+								if (failed?.error) {
+									deleteError = failed.error;
+									break;
+								}
+							}
+						}
+
+						setConfirmModal(null);
+
+						if (deleteError) {
+							console.error("Failed to delete all guests:", deleteError);
+							await fetchGuests();
+							showToast(
+								"error",
+								"Delete All Failed",
+								"Unable to delete guest records right now. Please try again.",
+							);
+						} else {
+							setGuests([]);
+							setCurrentPage(1);
+							showToast(
+								"success",
+								"All Guests Deleted",
+								`Successfully deleted all ${countToDelete} guest record(s) from the system.`,
+							);
+						}
+					} finally {
+						resumeRealtime();
 					}
 				},
 			},
@@ -871,14 +1010,28 @@ export const AdminDashboard: React.FC = () => {
 				return;
 			}
 
-			// Batch insert in chunks of 50
-			const chunkSize = 50;
+			// Batch upsert in chunks of 500 while pausing realtime subscription
+			const chunkSize = 500;
 			let insertedCount = 0;
+			let hasChunkError = false;
+			pauseRealtime();
+			setImportProgress({ current: 0, total: newGuestsToInsert.length });
+
 			for (let i = 0; i < newGuestsToInsert.length; i += chunkSize) {
 				const chunk = newGuestsToInsert.slice(i, i + chunkSize);
-				const { error } = await supabase.from("guests").insert(chunk);
+				let { error } = await supabase.from("guests").upsert(chunk, {
+					onConflict: "phone_normalized",
+					ignoreDuplicates: true,
+				});
+
+				if (error && error.code === "42P10") {
+					const fallback = await supabase.from("guests").insert(chunk);
+					error = fallback.error;
+				}
+
 				if (error) {
 					console.error("Batch insert error:", error);
+					hasChunkError = true;
 					showToast(
 						"error",
 						"Import Error",
@@ -887,27 +1040,35 @@ export const AdminDashboard: React.FC = () => {
 					break;
 				}
 				insertedCount += chunk.length;
+				setImportProgress({
+					current: insertedCount,
+					total: newGuestsToInsert.length,
+				});
 			}
 
-			const skippedParts: string[] = [];
-			if (skippedDuplicatePhoneCount > 0) {
-				skippedParts.push(
-					`${skippedDuplicatePhoneCount} duplicate phone number(s)`,
-				);
+			await fetchGuests();
+			setCurrentPage(1);
+
+			if (!hasChunkError || insertedCount > 0) {
+				const skippedParts: string[] = [];
+				if (skippedDuplicatePhoneCount > 0) {
+					skippedParts.push(
+						`${skippedDuplicatePhoneCount} duplicate phone number(s)`,
+					);
+				}
+				if (skippedInvalidPhoneCount > 0) {
+					skippedParts.push(
+						`${skippedInvalidPhoneCount} invalid Egyptian phone number(s)`,
+					);
+				}
+				const skippedMsg =
+					skippedParts.length > 0 ? ` (${skippedParts.join(", ")} skipped)` : "";
+				const summaryMsg = `Successfully imported ${insertedCount} guests!${skippedMsg}`;
+				setImportSummary(summaryMsg);
+				if (insertedCount > 0) {
+					showToast("success", "Guests Imported", summaryMsg);
+				}
 			}
-			if (skippedInvalidPhoneCount > 0) {
-				skippedParts.push(
-					`${skippedInvalidPhoneCount} invalid Egyptian phone number(s)`,
-				);
-			}
-			const skippedMsg =
-				skippedParts.length > 0 ? ` (${skippedParts.join(", ")} skipped)` : "";
-			const summaryMsg = `Successfully imported ${insertedCount} guests!${skippedMsg}`;
-			setImportSummary(summaryMsg);
-			if (insertedCount > 0) {
-				showToast("success", "Guests Imported", summaryMsg);
-			}
-			fetchGuests();
 			if (fileInputRef.current) fileInputRef.current.value = "";
 		} catch (err: unknown) {
 			console.error("File parse error:", err);
@@ -917,6 +1078,8 @@ export const AdminDashboard: React.FC = () => {
 				"Unable to read the uploaded file. Please ensure it is a valid CSV or Excel (.xlsx) file.",
 			);
 		} finally {
+			resumeRealtime();
+			setImportProgress(null);
 			setImportLoading(false);
 		}
 	};
@@ -1036,7 +1199,10 @@ export const AdminDashboard: React.FC = () => {
 							<input
 								type="text"
 								value={searchQuery}
-								onChange={(e) => setSearchQuery(e.target.value)}
+								onChange={(e) => {
+									setSearchQuery(e.target.value);
+									setCurrentPage(1);
+								}}
 								placeholder="Search guest name or phone..."
 								className="w-full bg-shop-navy/60 border border-shop-cream/20 rounded-xl pl-9 pr-3 py-2 text-sm text-shop-cream placeholder-shop-cream/40 focus:outline-none focus:border-shop-gold"
 							/>
@@ -1044,11 +1210,12 @@ export const AdminDashboard: React.FC = () => {
 
 						<select
 							value={statusFilter}
-							onChange={(e) =>
+							onChange={(e) => {
 								setStatusFilter(
 									e.target.value as "all" | "checked_in" | "pending",
-								)
-							}
+								);
+								setCurrentPage(1);
+							}}
 							className="shrink-0 bg-shop-navy/60 border border-shop-cream/20 rounded-xl px-3 py-2 text-xs text-shop-cream focus:outline-none focus:border-shop-gold font-medium"
 						>
 							<option value="all">All Guests ({totalGuests})</option>
@@ -1172,13 +1339,13 @@ export const AdminDashboard: React.FC = () => {
 										</td>
 									</tr>
 								) : (
-									filteredGuests.map((guest, index) => (
+									paginatedGuests.map((guest, index) => (
 										<tr
 											key={guest.id}
 											className="hover:bg-shop-cream/5 transition duration-150"
 										>
 											<td className="py-3.5 px-4 text-center font-mono text-shop-cream/60 text-xs whitespace-nowrap">
-												{index + 1}
+												{pageStartIndex + index + 1}
 											</td>
 											<td className="py-3.5 px-4 font-bold text-shop-cream text-sm whitespace-nowrap">
 												{capitalizeName(guest.name)}
@@ -1314,6 +1481,80 @@ export const AdminDashboard: React.FC = () => {
 							</tbody>
 						</table>
 					</div>
+
+					{/* Pagination Footer */}
+					{!loading && filteredGuests.length > 0 && (
+						<div className="bg-shop-navy/60 border-t border-shop-cream/15 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-shop-cream/80">
+							<div className="flex items-center space-x-3">
+								<span>
+									Showing{" "}
+									<strong className="text-shop-cream">
+										{pageStartIndex + 1}
+									</strong>
+									–
+									<strong className="text-shop-cream">
+										{Math.min(pageStartIndex + pageSize, filteredGuests.length)}
+									</strong>{" "}
+									of{" "}
+									<strong className="text-shop-cream">
+										{filteredGuests.length}
+									</strong>{" "}
+									guests
+								</span>
+
+								<div className="flex items-center space-x-1.5">
+									<span className="text-shop-cream/50">Rows:</span>
+									<select
+										value={pageSize}
+										onChange={(e) => {
+											setPageSize(Number(e.target.value));
+											setCurrentPage(1);
+										}}
+										className="bg-shop-navy border border-shop-cream/20 rounded-lg px-2 py-1 text-xs text-shop-cream focus:outline-none focus:border-shop-gold"
+									>
+										<option value={50}>50</option>
+										<option value={100}>100</option>
+										<option value={250}>250</option>
+									</select>
+								</div>
+							</div>
+
+							{totalPages > 1 && (
+								<div className="flex items-center space-x-2">
+									<button
+										type="button"
+										onClick={() =>
+											setCurrentPage((prev) => Math.max(1, prev - 1))
+										}
+										disabled={safeCurrentPage <= 1}
+										className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream px-2.5 py-1.5 rounded-lg text-xs font-medium transition inline-flex items-center space-x-1 disabled:opacity-40 disabled:cursor-not-allowed"
+									>
+										<ChevronLeft className="w-3.5 h-3.5" />
+										<span>Prev</span>
+									</button>
+
+									<span className="px-2 font-mono text-shop-cream/80">
+										Page <strong className="text-shop-cream">{safeCurrentPage}</strong> of{" "}
+										<strong className="text-shop-cream">{totalPages}</strong>
+									</span>
+
+									<button
+										type="button"
+										onClick={() =>
+											setCurrentPage((prev) =>
+												Math.min(totalPages, prev + 1),
+											)
+										}
+										disabled={safeCurrentPage >= totalPages}
+										className="bg-shop-navy hover:bg-shop-navy/80 border border-shop-cream/20 text-shop-cream px-2.5 py-1.5 rounded-lg text-xs font-medium transition inline-flex items-center space-x-1 disabled:opacity-40 disabled:cursor-not-allowed"
+									>
+										<span>Next</span>
+										<ChevronRight className="w-3.5 h-3.5" />
+									</button>
+								</div>
+							)}
+						</div>
+					)}
 				</div>
 			</main>
 
@@ -1501,9 +1742,11 @@ export const AdminDashboard: React.FC = () => {
 
 						{importLoading && (
 							<div className="mt-4 p-3 bg-shop-navy rounded-xl text-center text-xs text-shop-cream flex items-center justify-center space-x-2">
-								<div className="w-4 h-4 border-2 border-shop-cream/30 border-t-shop-cream rounded-full animate-spin" />
+								<div className="w-4 h-4 border-2 border-shop-cream/30 border-t-shop-cream rounded-full animate-spin shrink-0" />
 								<span>
-									Processing file and generating secure invitation tokens...
+									{importProgress
+										? `Importing guests (${importProgress.current} / ${importProgress.total})...`
+										: "Processing file and generating secure invitation tokens..."}
 								</span>
 							</div>
 						)}
