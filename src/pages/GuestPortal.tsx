@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useParams } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
-import confetti from "canvas-confetti";
 import {
 	Calendar,
 	Clock,
@@ -150,17 +149,6 @@ export const GuestPortal: React.FC = () => {
 			}
 
 			setVerifiedData(res);
-			// Trigger subtle celebration confetti
-			try {
-				confetti({
-					particleCount: 50,
-					spread: 60,
-					origin: { y: 0.7 },
-					colors: ["#f4ebda", "#1b4965", "#2d5a3f", "#c99a45"],
-				});
-			} catch (e) {
-				// Confetti is a visual extra
-			}
 		} catch {
 			setError("An unexpected error occurred. Please try again.");
 		} finally {
