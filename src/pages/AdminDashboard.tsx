@@ -826,7 +826,7 @@ export const AdminDashboard: React.FC = () => {
 	// Copy invitation link
 	const handleCopyInviteLink = (token: string) => {
 		const origin = getAppOrigin();
-		const url = `${origin}/?token=${token}`;
+		const url = `${origin}/invite/${token}`;
 		navigator.clipboard.writeText(url);
 		setCopiedToken(token);
 		setTimeout(() => setCopiedToken(null), 2000);
@@ -835,7 +835,7 @@ export const AdminDashboard: React.FC = () => {
 	// Open WhatsApp with prefilled invitation message
 	const handleWhatsApp = (guest: Guest) => {
 		const origin = getAppOrigin();
-		const inviteUrl = `${origin}/?token=${guest.invite_token}`;
+		const inviteUrl = `${origin}/invite/${guest.invite_token}`;
 		const displayName = capitalizeName(guest.name);
 		const message = `Hello ${displayName}! You are cordially invited to the private store opening of The Shop on Saturday, December 12, 2026 at 6:00 PM. Please access your digital entrance pass here: ${inviteUrl}`;
 		const encoded = encodeURIComponent(message);
@@ -868,7 +868,7 @@ export const AdminDashboard: React.FC = () => {
 			g.checked_in_at
 				? `"${new Date(g.checked_in_at).toLocaleString()}"`
 				: '""',
-			`"${origin}/?token=${g.invite_token}"`,
+			`"${origin}/invite/${g.invite_token}"`,
 		]);
 
 		const csvContent = [

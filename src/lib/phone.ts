@@ -75,7 +75,13 @@ export function generateToken(length = 24): string {
 	return Array.from(array, (byte) => chars[byte % chars.length]).join("");
 }
 
+export function sanitizeInviteToken(token: string): string {
+	if (!token) return "";
+	return token.trim().replace(/[/.?#].*$/, "").trim();
+}
+
 export function isValidInviteTokenFormat(token: string): boolean {
-	if (!token) return false;
-	return /^(?:[a-zA-Z0-9]{20,24}|inv_[a-zA-Z0-9]{8,24})$/.test(token.trim());
+	const sanitized = sanitizeInviteToken(token);
+	if (!sanitized) return false;
+	return /^(?:[a-zA-Z0-9]{16,32}|inv_[a-zA-Z0-9]{8,32})$/.test(sanitized);
 }

@@ -21,6 +21,7 @@ import {
 	getFirstName,
 	isValidEgyptianPhone,
 	isValidInviteTokenFormat,
+	sanitizeInviteToken,
 } from "../lib/phone";
 import { getUserFriendlyError } from "../lib/error";
 import type { VerifyGuestResponse } from "../types";
@@ -32,12 +33,12 @@ export const GuestPortal: React.FC = () => {
 	const { token: routeToken } = useParams<{ token?: string }>();
 
 	// Support ?token=..., ?invite=..., or /invite/:token
-	const inviteTokenFromUrl = (
+	const rawToken =
 		searchParams.get("token") ||
 		searchParams.get("invite") ||
 		routeToken ||
-		""
-	).trim();
+		"";
+	const inviteTokenFromUrl = sanitizeInviteToken(rawToken);
 
 	const [tokenStatus, setTokenStatus] = useState<TokenStatus>(() => {
 		if (!inviteTokenFromUrl) return "missing";
