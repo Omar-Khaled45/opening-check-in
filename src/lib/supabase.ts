@@ -1,6 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+// Route through Vercel Reverse Proxy (/supabase) on production to bypass Egyptian ISP/telecom DPI throttling
+const getSupabaseUrl = (): string => {
+	const envUrl = import.meta.env.VITE_SUPABASE_URL;
+	if (
+		typeof window !== "undefined" &&
+		window.location.origin.includes("vercel.app")
+	) {
+		return `${window.location.origin}/supabase`;
+	}
+	return envUrl || "";
+};
+
+const supabaseUrl = getSupabaseUrl();
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
