@@ -5,6 +5,10 @@ import { defineConfig } from "vite";
 export default defineConfig({
 	plugins: [react()],
 	base: "/",
+	build: {
+		target: "es2020",
+		cssTarget: "safari14",
+	},
 	server: {
 		port: 3000,
 	},

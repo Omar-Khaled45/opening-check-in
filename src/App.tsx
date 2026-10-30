@@ -2,10 +2,8 @@ import React, { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { GuestPortal } from "./pages/GuestPortal";
 
-const GuestPortal = lazy(() =>
-	import("./pages/GuestPortal").then((m) => ({ default: m.GuestPortal })),
-);
 const Login = lazy(() =>
 	import("./pages/Login").then((m) => ({ default: m.Login })),
 );
@@ -28,14 +26,14 @@ export const App: React.FC = () => {
 			<BrowserRouter>
 				<Suspense fallback={<PageLoader />}>
 					<Routes>
-						{/* Public Guest Portal */}
+						{/* Public Guest Portal: Direct eager load for guests */}
 						<Route path="/" element={<GuestPortal />} />
 						<Route path="/invite/:token" element={<GuestPortal />} />
 
 						{/* Staff Login */}
 						<Route path="/login" element={<Login />} />
 
-						{/* Admin Dashboard: Admin only */}
+						{/* Admin Dashboard: Admin only (lazy loaded with xlsx) */}
 						<Route
 							path="/admin"
 							element={
@@ -45,7 +43,7 @@ export const App: React.FC = () => {
 							}
 						/>
 
-						{/* Scanner: Admin and Scanner Staff */}
+						{/* Scanner: Admin and Scanner Staff (lazy loaded with html5-qrcode) */}
 						<Route
 							path="/scanner"
 							element={
