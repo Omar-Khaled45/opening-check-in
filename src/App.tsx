@@ -22,43 +22,41 @@ const PageLoader: React.FC = () => (
 
 export const App: React.FC = () => {
 	return (
-		<AuthProvider>
-			<BrowserRouter>
-				<Suspense fallback={<PageLoader />}>
-					<Routes>
-						{/* Public Guest Portal: Direct eager load for guests */}
-						<Route path="/" element={<GuestPortal />} />
-						<Route path="/invite/:token" element={<GuestPortal />} />
+		<BrowserRouter>
+			<Suspense fallback={<PageLoader />}>
+				<Routes>
+					{/* Public Guest Portal: Instant zero-overhead rendering for mobile guests */}
+					<Route path="/" element={<GuestPortal />} />
+					<Route path="/invite/:token" element={<GuestPortal />} />
 
-						{/* Staff Login */}
-						<Route path="/login" element={<Login />} />
-
-						{/* Admin Dashboard: Admin only (lazy loaded with xlsx) */}
-						<Route
-							path="/admin"
-							element={
+					{/* Protected & Staff Routes wrapped with AuthProvider */}
+					<Route path="/login" element={<AuthProvider><Login /></AuthProvider>} />
+					<Route
+						path="/admin"
+						element={
+							<AuthProvider>
 								<ProtectedRoute allowedRoles={["admin"]}>
 									<AdminDashboard />
 								</ProtectedRoute>
-							}
-						/>
-
-						{/* Scanner: Admin and Scanner Staff (lazy loaded with html5-qrcode) */}
-						<Route
-							path="/scanner"
-							element={
+							</AuthProvider>
+						}
+					/>
+					<Route
+						path="/scanner"
+						element={
+							<AuthProvider>
 								<ProtectedRoute allowedRoles={["admin", "scanner"]}>
 									<Scanner />
 								</ProtectedRoute>
-							}
-						/>
+							</AuthProvider>
+						}
+					/>
 
-						{/* Fallback to home */}
-						<Route path="*" element={<Navigate to="/" replace />} />
-					</Routes>
-				</Suspense>
-			</BrowserRouter>
-		</AuthProvider>
+					{/* Fallback to home */}
+					<Route path="*" element={<Navigate to="/" replace />} />
+				</Routes>
+			</Suspense>
+		</BrowserRouter>
 	);
 };
 

@@ -43,7 +43,7 @@ export const GuestPortal: React.FC = () => {
 	const [tokenStatus, setTokenStatus] = useState<TokenStatus>(() => {
 		if (!inviteTokenFromUrl) return "missing";
 		if (!isValidInviteTokenFormat(inviteTokenFromUrl)) return "invalid";
-		return "checking";
+		return "valid";
 	});
 	const [tokenErrorReason, setTokenErrorReason] = useState<string | null>(null);
 	const [phone, setPhone] = useState("");
@@ -63,88 +63,22 @@ export const GuestPortal: React.FC = () => {
 		fileName: string;
 	} | null>(null);
 
-	// Validate the invitation token from the URL on page load
+	// Validate invitation token format on URL change
 	useEffect(() => {
-		let isCancelled = false;
 		setVerifiedData(null);
 		setError(null);
-
 		if (!inviteTokenFromUrl) {
 			setTokenStatus("missing");
 			setTokenErrorReason(null);
-			return;
-		}
-
-		if (!isValidInviteTokenFormat(inviteTokenFromUrl)) {
+		} else if (!isValidInviteTokenFormat(inviteTokenFromUrl)) {
 			setTokenStatus("invalid");
 			setTokenErrorReason(
 				"This invitation link is invalid or malformed. Please use the exact link sent to you.",
 			);
-			return;
-		}
-
-		const verifyTokenExists = async () => {
-			setTokenStatus("checking");
+		} else {
+			setTokenStatus("valid");
 			setTokenErrorReason(null);
-
-			try {
-				const { data, error: rpcError } = await supabase.rpc(
-					"verify_guest_invite",
-					{
-						p_invite_token: inviteTokenFromUrl,
-						p_phone: "__token_check__",
-					},
-				);
-
-				if (isCancelled) return;
-
-				if (rpcError) {
-					setTokenStatus("invalid");
-					setTokenErrorReason(
-						"Unable to verify this invitation link right now. Please try again shortly.",
-					);
-					return;
-				}
-
-				const res = data as VerifyGuestResponse | null;
-				if (res?.success) {
-					setTokenStatus("valid");
-					return;
-				}
-
-				const errMsg = (res?.error || "").toLowerCase();
-				// If the RPC reached the phone number comparison step, the token itself exists and is active
-				const isPhoneMismatchError =
-					errMsg.includes("phone") ||
-					errMsg.includes("mobile") ||
-					errMsg.includes("number");
-
-				if (isPhoneMismatchError) {
-					setTokenStatus("valid");
-				} else {
-					setTokenStatus("invalid");
-					setTokenErrorReason(
-						getUserFriendlyError(
-							res?.error,
-							"This invitation link is not recognized or is no longer valid.",
-						),
-					);
-				}
-			} catch {
-				if (!isCancelled) {
-					setTokenStatus("invalid");
-					setTokenErrorReason(
-						"Unable to verify this invitation link. Please check your connection and try again.",
-					);
-				}
-			}
-		};
-
-		verifyTokenExists();
-
-		return () => {
-			isCancelled = true;
-		};
+		}
 	}, [inviteTokenFromUrl]);
 
 	const handleVerify = async (e: React.FormEvent) => {
@@ -174,6 +108,7 @@ export const GuestPortal: React.FC = () => {
 					p_invite_token: inviteTokenFromUrl,
 					p_phone: phone.trim(),
 				},
+				{ get: true }
 			);
 
 			if (rpcError) {
@@ -713,34 +648,10 @@ export const GuestPortal: React.FC = () => {
 		return assets;
 	}, [verifiedData]);
 
-	// Pre-generate high-resolution PNG pass image as soon as guest is verified
+	// Clear cached pass assets when verified guest changes (assets will be built on demand upon download)
 	useEffect(() => {
 		passAssetsRef.current = null;
-		if (!verifiedData) return;
-
-		let cancelled = false;
-		const preparePassImage = async () => {
-			await Promise.resolve();
-			if (cancelled) return;
-			buildPassAssets();
-			try {
-				if (document.fonts?.ready) {
-					await document.fonts.ready;
-				}
-			} catch {
-				// Proceed with fallback fonts
-			}
-			if (!cancelled) {
-				buildPassAssets();
-			}
-		};
-
-		preparePassImage();
-
-		return () => {
-			cancelled = true;
-		};
-	}, [verifiedData, buildPassAssets]);
+	}, [verifiedData]);
 
 	const triggerBlobDownload = (blob: Blob, fileName: string) => {
 		const blobUrl = URL.createObjectURL(blob);
