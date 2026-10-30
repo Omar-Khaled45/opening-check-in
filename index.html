@@ -19,7 +19,28 @@
 		/>
 		<meta property="og:type" content="website" />
 
-		<!-- Fast Google Fonts (strictly needed weights only with display=swap) -->
+		<!-- Diagnostic Error Catcher for Mobile WebKit -->
+		<script>
+			window.addEventListener('error', function(e) {
+				try {
+					var b = document.createElement('div');
+					b.style.cssText = 'position:fixed;top:10px;left:10px;right:10px;z-index:999999;background:#b91c1c;color:#fff;padding:16px;border-radius:12px;font-family:system-ui;font-size:12px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,0.5);word-break:break-all;';
+					b.innerHTML = '<strong>App Error:</strong><br/>' + (e.message || e.error) + '<br/><span style="opacity:0.8;font-size:10px;">' + (e.filename || '') + ':' + (e.lineno || '') + '</span>';
+					document.body.appendChild(b);
+				} catch(err) {}
+			});
+			window.addEventListener('unhandledrejection', function(e) {
+				try {
+					var b = document.createElement('div');
+					b.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;z-index:999999;background:#b91c1c;color:#fff;padding:16px;border-radius:12px;font-family:system-ui;font-size:12px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,0.5);word-break:break-all;';
+					var reason = e.reason ? (e.reason.message || e.reason.stack || JSON.stringify(e.reason)) : 'Unknown rejection';
+					b.innerHTML = '<strong>Unhandled Rejection:</strong><br/>' + reason;
+					document.body.appendChild(b);
+				} catch(err) {}
+			});
+		</script>
+
+		<!-- Fast Google Fonts (display=swap) -->
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
